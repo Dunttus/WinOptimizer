@@ -140,19 +140,22 @@ Fix corrupted Windows system files.
     git clone https://github.com/Dunttus/WinOptimizer.git
     ```
     ```bash
-    cd WinOptimize-Wibe-Suite
+    cd WinOptimizer
     ```
 
-2.  **Install dependencies:**
+2.  **Install Python and dependencies:**
+    ```bash
+    winget install Python.Python.3.14
+    ```
     ```bash
     pip install customtkinter psutil pillow darkdetect
     ```
 
-3.  **Run as Administrator:**
+4.  **Run as Administrator:**
     * Right-click your terminal or IDE and select **"Run as Administrator"**.
     * Execute the main script:
     ```bash
-    python main.py
+    python.exe main.py
     ```
 
 ---
@@ -184,5 +187,6 @@ Powered by these amazing projects:
 ---
 
 ## 📄 License
+
 
 This project is licensed under the **GPL-3.0 License**.
