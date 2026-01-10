@@ -22,6 +22,8 @@ The central command center for your system.
   <li><b>Live Monitoring:</b> Real-time circular gauges for <b>CPU</b>, <b>RAM</b>, and <b>Disk</b> usage.</li>
   <li><b>System Specs:</b> Instant view of Hostname, OS Build, GPU, and Uptime.</li>
   <li><b>Status:</b> Quick health check status at a glance.</li>
+  <li><b>Hardware Health:</b> Deep-dive diagnostics including battery wear analysis, S.M.A.R.T. storage metrics (Temp, Life Remaining, R/W Errors), and Silicon specs (RAM Speed, GPU Drivers, and CPU Thermals).</li>
+</ul>
 </ul>
 </details>
 
