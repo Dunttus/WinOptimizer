@@ -10,33 +10,68 @@ class NetworkModule:
         self.frame = ctk.CTkFrame(parent)
         add_info_section(self.frame, "Network Tools", "Run common Windows network diagnostics and reset commands.")
         
-        # --- Control Area (Buttons) ---
-        self.ctrl_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        self.ctrl_frame.pack(fill="x", padx=20, pady=10)
-        
-        # Column 1
-        self.col1 = ctk.CTkFrame(self.ctrl_frame, fg_color="transparent")
-        self.col1.pack(side="left", fill="both", expand=True, padx=5)
-        
-        ctk.CTkButton(self.col1, text="Flush DNS Cache", command=lambda: self.run_cmd("ipconfig /flushdns", "Flushing DNS...")).pack(fill="x", pady=5)
-        ctk.CTkButton(self.col1, text="Renew IP Address", command=lambda: self.run_cmd("ipconfig /renew", "Renewing IP (this may take a moment)...")).pack(fill="x", pady=5)
-        ctk.CTkButton(self.col1, text="Ping Google (Latency)", command=lambda: self.run_cmd("ping -n 4 google.com", "Pinging Google...")).pack(fill="x", pady=5)
+        # --- Tools List Container ---
+        self.tools_frame = ctk.CTkScrollableFrame(self.frame, label_text="Network Commands")
+        self.tools_frame.pack(fill="x", expand=False, padx=20, pady=10, ipady=10)
 
-        # Column 2
-        self.col2 = ctk.CTkFrame(self.ctrl_frame, fg_color="transparent")
-        self.col2.pack(side="left", fill="both", expand=True, padx=5)
+        # 1. Flush DNS
+        self.create_tool_row(
+            "Flush DNS", 
+            "Clears the DNS resolver cache to fix connection issues.",
+            lambda: self.run_cmd("ipconfig /flushdns", "Flushing DNS...")
+        )
+
+        # 2. Renew IP
+        self.create_tool_row(
+            "Renew IP", 
+            "Requests a new IP address from the DHCP server (may briefly disconnect).",
+            lambda: self.run_cmd("ipconfig /renew", "Renewing IP...")
+        )
+
+        # 3. Ping Google
+        self.create_tool_row(
+            "Ping Google", 
+            "Checks internet connectivity and measures latency to Google servers.",
+            lambda: self.run_cmd("ping -n 4 google.com", "Pinging Google...")
+        )
+
+        # 4. Reset Winsock
+        self.create_tool_row(
+            "Reset Winsock", 
+            "Resets the Winsock Catalog to clean state. Requires Restart.",
+            self.reset_winsock,
+            color="#c42b1c"
+        )
+
+        # 5. WLAN Report
+        self.create_tool_row(
+            "WLAN Report", 
+            "Generates a detailed wireless connectivity report (requires Admin).",
+            self.generate_wlan_report
+        )
+
+        # --- Terminal Control Bar ---
+        term_ctrl_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        term_ctrl_frame.pack(fill="x", padx=20, pady=(10, 0))
         
-        ctk.CTkButton(self.col2, text="Reset Winsock Catalog", fg_color="#c42b1c", hover_color="#8a1c11",
-                      command=self.reset_winsock).pack(fill="x", pady=5)
-        ctk.CTkButton(self.col2, text="Generate WLAN Report", command=self.generate_wlan_report).pack(fill="x", pady=5)
-        ctk.CTkButton(self.col2, text="Clear Terminal", fg_color="gray", command=self.clear_terminal).pack(fill="x", pady=5)
+        ctk.CTkLabel(term_ctrl_frame, text="Terminal Output:", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        ctk.CTkButton(term_ctrl_frame, text="Clear Terminal", width=120, fg_color="gray", command=self.clear_terminal).pack(side="right")
 
         # --- Terminal Output Window ---
-        ctk.CTkLabel(self.frame, text="Terminal Output:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(10, 0))
-        
         self.terminal = ctk.CTkTextbox(self.frame, font=ctk.CTkFont(family="Consolas", size=12), text_color="#00FF00", fg_color="black")
-        self.terminal.pack(fill="both", expand=True, padx=20, pady=10)
+        self.terminal.pack(fill="both", expand=True, padx=20, pady=5)
         self.terminal.configure(state="disabled")
+
+    def create_tool_row(self, title, desc, command, color=None):
+        row = ctk.CTkFrame(self.tools_frame, fg_color="transparent")
+        row.pack(fill="x", pady=5)
+        
+        # Button
+        btn_color = color if color else ["#3B8ED0", "#1F6AA5"]
+        ctk.CTkButton(row, text=title, width=140, command=command, fg_color=btn_color).pack(side="left", padx=10)
+        
+        # Description
+        ctk.CTkLabel(row, text=desc, text_color="gray", anchor="w").pack(side="left", fill="x", expand=True)
 
     def log(self, text):
         """Append text to the terminal window."""
@@ -53,7 +88,8 @@ class NetworkModule:
     def run_cmd(self, command, status_msg):
         """Runs a subprocess command in a thread."""
         def _target():
-            self.log(f"\n> {command}")
+            self.log(f"\n--- {status_msg} ---")
+            self.log(f"> {command}")
             try:
                 # Capture Output
                 process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -65,7 +101,6 @@ class NetworkModule:
             except Exception as e:
                 self.log(f"Execution Error: {e}")
 
-        self.log(f"\n--- {status_msg} ---")
         threading.Thread(target=_target, daemon=True).start()
 
     def reset_winsock(self):
@@ -86,22 +121,18 @@ class NetworkModule:
             
             report_path = r"C:\ProgramData\Microsoft\Windows\WlanReport\wlan-report-latest.html"
             
-            # Remove old report if it exists to verify new one is created
             if os.path.exists(report_path):
                 try:
                     os.remove(report_path)
                 except:
-                    self.log("(Note: Could not delete previous report file before generating new one)")
+                    self.log("(Note: Could not delete previous report file)")
 
             try:
-                # Run the command
                 result = subprocess.run("netsh wlan show wlanreport", capture_output=True, text=True, shell=True)
                 self.log(result.stdout)
                 
-                # Check FILE EXISTENCE instead of parsing text
                 if os.path.exists(report_path):
                     self.log(f"SUCCESS: Report found at {report_path}")
-                    
                     if messagebox.askyesno("Report Ready", "WLAN Report generated successfully.\nOpen it now in your browser?"):
                          subprocess.Popen(f'explorer "{report_path}"', shell=True)
                 else:

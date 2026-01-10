@@ -32,6 +32,37 @@ CLEANER_PATHS = [
     ("Error Reports", r"C:\ProgramData\Microsoft\Windows\WER"),
 ]
 
+# --- App Uninstaller Whitelist ---
+# Only apps containing these strings will be displayed in the Uninstaller
+SAFE_APP_WHITELIST = [
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.WindowsFeedbackHub",
+    "Microsoft.GetHelp",
+    "Microsoft.Getstarted",
+    "Microsoft.Messaging",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.People",
+    "Microsoft.SkypeApp",
+    "Microsoft.YourPhone",
+    "Microsoft.ZuneVideo",
+    "Microsoft.ZuneMusic",
+    "Microsoft.WindowsAlarms",
+    "Microsoft.WindowsMaps",
+    "Microsoft.WindowsCamera",
+    "Microsoft.WindowsSoundRecorder",
+    "Microsoft.Office.OneNote",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay",
+    "Microsoft.GamingApp",
+    "Microsoft.PowerAutomateDesktop",
+    "Microsoft.Todos",
+    "Microsoft.BingSearch",
+]
+
 # UI Colors
 COLOR_RED = "#c42b1c"
 COLOR_BLUE = "#1f6aa5"

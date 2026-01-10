@@ -1,110 +1,97 @@
 import customtkinter as ctk
 import subprocess
 import threading
-from tkinter import messagebox
-from utils import add_info_section, is_admin
-from ui_manager import Win11UXManager
+from utils import add_info_section
 
 class ServicesModule:
     def __init__(self, parent):
         self.frame = ctk.CTkFrame(parent)
-        add_info_section(self.frame, "Service Booster", "Stop background services and set them to Manual startup to free up RAM.")
-        
-        # Status Label
-        self.status_label = ctk.CTkLabel(self.frame, text="Ready", text_color="gray")
-        self.status_label.pack(pady=(0, 5))
+        add_info_section(self.frame, "Service Manager", "Disable unnecessary background services to free up RAM and CPU.")
 
-        self.booster_list = ctk.CTkScrollableFrame(self.frame, label_text="Select services to optimize")
-        self.booster_list.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        # Expanded List of Services
-        self.target_services = [
-            {"name": "DiagTrack", "desc": "Connected User Experiences & Telemetry"},
-            {"name": "WSearch", "desc": "Windows Search Indexer (High Disk Usage)"},
-            {"name": "Spooler", "desc": "Print Spooler (Unnecessary if no printer)"},
-            {"name": "TermService", "desc": "Remote Desktop Services"},
-            {"name": "DoSvc", "desc": "Windows Update Delivery Optimization"},
-            {"name": "MapsBroker", "desc": "Downloaded Maps Manager"},
-            {"name": "Fax", "desc": "Fax Service"},
-            {"name": "XblAuthManager", "desc": "Xbox Live Auth Manager"},
-            {"name": "XblGameSave", "desc": "Xbox Live Game Save"},
-            {"name": "XboxNetApiSvc", "desc": "Xbox Live Networking Service"},
-            {"name": "WerSvc", "desc": "Windows Error Reporting Service"},
-            {"name": "PcaSvc", "desc": "Program Compatibility Assistant"},
-            {"name": "RetailDemo", "desc": "Retail Demo Service"},
-            {"name": "WMPNetworkSvc", "desc": "Windows Media Player Network Sharing"},
+        # --- Warning ---
+        warning_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        warning_frame.pack(fill="x", padx=20, pady=(0, 10))
+        ctk.CTkLabel(warning_frame, text="⚠️ Note: Services listed below are safe to disable for most users, but some may be locked by Windows.", 
+                     text_color="gray", font=ctk.CTkFont(size=12)).pack(anchor="w")
+
+        # --- Services List ---
+        self.scroll = ctk.CTkScrollableFrame(self.frame, label_text="Debloat Services")
+        self.scroll.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Service Definitions: (Display Name, Real Service Name, Description)
+        self.services = [
+            ("Connected User Exp (Telemetry)", "DiagTrack", "Tracks usage data and sends it to Microsoft."),
+            ("SysMain (Superfetch)", "SysMain", "Preloads apps to RAM. Can cause high disk usage on HDDs."),
+            ("Remote Desktop (TermService)", "TermService", "Allows remote connections. Safe to disable if not used."),
+            ("Xbox Accessories", "XboxGipSvc", "Drivers for Xbox controllers."),
+            ("Xbox Live Auth", "XblAuthManager", "Authentication for Xbox Live."),
+            ("Downloaded Maps Manager", "MapsBroker", "Updates offline maps."),
+            ("Fax Service", "Fax", "Legacy service for sending faxes."),
+            ("Touch Keyboard Service", "TabletInputService", "On-screen keyboard (disable if not using touch)."),
+            ("Windows Insider Service", "wisvc", "Beta testing service for Windows updates.")
         ]
+
+        # Create Rows
+        for title, service_name, desc in self.services:
+            self.create_row(title, service_name, desc)
+
+    def create_row(self, title, service_name, desc):
+        row = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        row.pack(fill="x", pady=5)
         
-        self.create_service_rows()
+        # Text Info
+        text_frame = ctk.CTkFrame(row, fg_color="transparent")
+        text_frame.pack(side="left", fill="x", expand=True, padx=5)
+        
+        ctk.CTkLabel(text_frame, text=title, font=ctk.CTkFont(weight="bold"), anchor="w").pack(fill="x")
+        ctk.CTkLabel(text_frame, text=desc, text_color="gray", font=ctk.CTkFont(size=11), anchor="w").pack(fill="x")
 
-    def create_service_rows(self):
-        # Clear existing
-        for widget in self.booster_list.winfo_children():
-            widget.destroy()
+        # Action Button
+        btn = ctk.CTkButton(row, text="Disable", width=120, fg_color=("#3B8ED0", "#1F6AA5"))
+        btn.configure(command=lambda b=btn, s=service_name: self.disable_service(s, b))
+        btn.pack(side="right", padx=10)
 
-        for svc in self.target_services:
-            row = ctk.CTkFrame(self.booster_list)
-            row.pack(fill="x", pady=2)
-            
-            # Service Name
-            ctk.CTkLabel(row, text=svc['name'], width=120, anchor="w", 
-                         font=ctk.CTkFont(weight="bold", family="Consolas")).pack(side="left", padx=10)
-            
-            # Description
-            ctk.CTkLabel(row, text=svc['desc'], anchor="w").pack(side="left", padx=5)
-            
-            # Stop Button
-            btn = ctk.CTkButton(row, text="Stop & Manual", width=100, fg_color="#c42b1c", 
-                                hover_color="#8a1c11",
-                                command=lambda s=svc['name'], r=row: self.stop_service(s, r))
-            btn.pack(side="right", padx=10, pady=5)
-
-    def stop_service(self, service_name, row_widget):
-        if not is_admin():
-            messagebox.showerror("Permission Error", "Administrator privileges are required to manage services.")
-            return
-
-        def _run_optimization():
-            self.status_label.configure(text=f"Stopping {service_name}...", text_color="#1E90FF")
-            
+    def disable_service(self, service_name, button):
+        """Disables service and updates button with specific status."""
+        
+        # 1. Processing State
+        button.configure(text="Processing...", state="disabled", fg_color="gray30")
+        
+        def _target():
             try:
-                # 1. Set Startup Type to Manual (start= demand)
-                # Note: The space after 'start=' is mandatory in 'sc' commands.
-                subprocess.run(
-                    f'sc config "{service_name}" start= demand', 
-                    shell=True, creationflags=subprocess.CREATE_NO_WINDOW, check=False
-                )
-                
-                # 2. Stop the service immediately
-                result = subprocess.run(
-                    f'net stop "{service_name}" /y', 
-                    shell=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
-                )
+                # A. Stop Service (Ignore errors if already stopped)
+                subprocess.run(f"net stop {service_name} /y", shell=True, capture_output=True)
 
-                # Update UI on Main Thread
-                if result.returncode == 0 or "not started" in result.stderr.lower():
-                    self.frame.after(0, lambda: self._on_success(service_name, row_widget))
+                # B. Disable Service (Critical Step)
+                cmd = f"sc config {service_name} start= disabled"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    # SUCCESS
+                    new_text = "Disabled ✓"
+                    new_color = "gray30"  # Gray as requested
                 else:
-                    self.frame.after(0, lambda: self._on_fail(service_name, result.stderr))
+                    # FAILURE - Analyze specific errors
+                    err = result.stderr.strip()
                     
+                    if "Access is denied" in err:
+                        new_text = "Access Denied" # Needs Admin
+                    elif "OpenService FAILED 1060" in err:
+                        new_text = "Not Installed" # Service doesn't exist on this PC
+                    elif "OpenService FAILED 5" in err:
+                        new_text = "System Locked" # Windows protected service
+                    elif "OpenService FAILED" in err:
+                        new_text = "Protected"     # Generic protection
+                    else:
+                        new_text = "Failed"
+
+                    new_color = "gray30" # Still turn gray to show we tried
+
+                # Update UI safely
+                self.frame.after(0, lambda: button.configure(text=new_text, fg_color=new_color, state="disabled"))
+
             except Exception as e:
-                self.frame.after(0, lambda: self._on_fail(service_name, str(e)))
+                print(f"Service Error: {e}")
+                self.frame.after(0, lambda: button.configure(text="Script Error", fg_color="gray30", state="disabled"))
 
-        # Run in thread to prevent GUI freezing
-        threading.Thread(target=_run_optimization, daemon=True).start()
-
-    def _on_success(self, service_name, row_widget):
-        self.status_label.configure(text=f"Successfully optimized {service_name}", text_color="#00FF00")
-        
-        # Visual feedback: Change button to "Done" and disable it
-        for child in row_widget.winfo_children():
-            if isinstance(child, ctk.CTkButton):
-                child.configure(text="Stopped", state="disabled", fg_color="gray30")
-        
-        # Optional: Send Toast Notification
-        Win11UXManager.send_notification("Service Stopped", f"{service_name} has been stopped and set to Manual.")
-
-    def _on_fail(self, service_name, error_msg):
-        self.status_label.configure(text=f"Failed to stop {service_name}", text_color="#c42b1c")
-        print(f"Service Error ({service_name}): {error_msg}")
-        messagebox.showerror("Service Error", f"Could not stop {service_name}.\n\nError: {error_msg}")
+        threading.Thread(target=_target, daemon=True).start()
