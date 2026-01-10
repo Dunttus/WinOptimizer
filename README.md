@@ -148,7 +148,7 @@ Fix corrupted Windows system files.
     winget install Python.Python.3.14
     ```
     ```bash
-    pip install customtkinter psutil pillow darkdetect
+    pip install customtkinter psutil pillow
     ```
 
 4.  **Run as Administrator:**
@@ -175,14 +175,13 @@ Fix corrupted Windows system files.
 
 ### 🧠 Project Team
 * **Project Creator:** Dunttus
-* **AI Assistance:** Partly Wibe Coded with Gemini
+* **AI Assistance:** Partly vibe coded with Gemini
 
 ### 📚 Open Source Libraries
 Powered by these amazing projects:
 * **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** - Modern UI framework
 * **[psutil](https://github.com/giampaolo/psutil)** - System & process monitoring
 * **[Pillow](https://github.com/python-pillow/Pillow)** - Image processing
-* **[DarkDetect](https://github.com/albertosottile/darkdetect)** - System theme integration
 
 ---
 
@@ -190,3 +189,4 @@ Powered by these amazing projects:
 
 
 This project is licensed under the **GPL-3.0 License**.
+
