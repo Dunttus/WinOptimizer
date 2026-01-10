@@ -137,7 +137,9 @@ Fix corrupted Windows system files.
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/Dunttus/WinOptimizer.git](https://github.com/Dunttus/WinOptimizer.git)
+    git clone https://github.com/Dunttus/WinOptimizer.git
+    ```
+    ```bash
     cd WinOptimize-Wibe-Suite
     ```
 
