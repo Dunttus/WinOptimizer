@@ -1,4 +1,4 @@
-# 🚀 WinOptimize 11 - Wibe Suite
+# 🚀 Windows 11 Optimize - Wibe Suite
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows_10%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white)
@@ -49,6 +49,16 @@ Remove pre-installed junk safely.
 </details>
 
 ### 3️⃣ System Optimization
+<details>
+<summary><b>Privacy & Tweaks</b></summary>
+<br>
+Customize Windows behavior with simple toggles.
+<ul>
+  <li><b>Privacy:</b> Disable Telemetry and Bing Search results in Start Menu.</li>
+  <li><b>UI Tweaks:</b> Restore "Classic" Context Menu (Win 11) and disable Lock Screen ads.</li>
+</ul>
+</details>
+
 <details>
 <summary><b>System Cleaner</b></summary>
 <br>
@@ -127,7 +137,7 @@ Fix corrupted Windows system files.
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/yourusername/WinOptimize-Wibe-Suite.git](https://github.com/yourusername/WinOptimize-Wibe-Suite.git)
+    git clone [https://github.com/Dunttus/WinOptimizer.git](https://github.com/Dunttus/WinOptimizer.git)
     cd WinOptimize-Wibe-Suite
     ```
 
@@ -158,11 +168,16 @@ Fix corrupted Windows system files.
 
 ## 🤝 Credits
 
-| Role | Name |
-| :--- | :--- |
-| **Lead Developer** | **Dunttus** |
-| **Co-Developer / Logic** | **Partly Wibe Coded with Gemini** |
-| **UI Framework** | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) |
+### 🧠 Project Team
+* **Project Creator:** Dunttus
+* **AI Assistance:** Partly Wibe Coded with Gemini
+
+### 📚 Open Source Libraries
+Powered by these amazing projects:
+* **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** - Modern UI framework
+* **[psutil](https://github.com/giampaolo/psutil)** - System & process monitoring
+* **[Pillow](https://github.com/python-pillow/Pillow)** - Image processing
+* **[DarkDetect](https://github.com/albertosottile/darkdetect)** - System theme integration
 
 ---
 
