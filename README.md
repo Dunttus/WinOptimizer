@@ -13,44 +13,61 @@ WinOptimize 11 streamlines Windows maintenance by combining a powerful **Package
 
 ## 🖥️ Feature Tabs Overview
 
-### 1. Overview
+### 1. OVERVIEW
 <details open>
-<summary><b>Dashboard & Hardware Health</b></summary>
+<summary><b>System Status & Health</b></summary>
 <br>
-The central command center for system monitoring and physical health.
 <ul>
-  <li><b>Dashboard:</b> Real-time circular gauges for CPU, RAM, and Disk usage with live system specs.</li>
-  <li><b>Hardware Health:</b> A dedicated diagnostic suite with <b>asynchronous loading</b> to prevent UI freezing.
+  <li><b>Dashboard:</b>
     <ul>
-      <li><b>Battery Health:</b> Estimated health percentage, cycle counts, and a one-click <b>Official Windows Battery Report</b> generator that prompts to open immediately upon completion.</li>
-      <li><b>Silicon & Memory:</b> Live CPU temperatures (using °C) and detailed <b>RAM Slot Mapping</b> showing Manufacturer, Speed, and Capacity per slot.</li>
-      <li><b>Storage Reliability:</b> Deep S.M.A.R.T. data including drive temperature, <b>Life Remaining %</b>, and physical Read/Write error tracking.</li>
+      <li><b>Resource Gauges:</b> Real-time circular dials for CPU, RAM, and Disk usage.</li>
+      <li><b>Network Monitor:</b> Live graph and speed indicators for upload/download activity.</li>
+      <li><b>Active Apps:</b> Tracks top bandwidth-consuming applications by session usage.</li>
+      <li><b>System Info:</b> Displays detailed Windows build, accurate CPU model, and uptime.</li>
+      <li><b>Registry Backup:</b> One-click safety tool to backup the `HKLM` hive.</li>
+    </ul>
+  </li>
+  <li><b>Hardware Health:</b>
+    <ul>
+      <li><b>Battery:</b> Health %, cycle count, and official Windows Battery Report generation.</li>
+      <li><b>Silicon:</b> Live CPU temperatures and RAM slot mapping.</li>
+      <li><b>Storage:</b> S.M.A.R.T. data, drive temps, and life remaining percentages.</li>
     </ul>
   </li>
 </ul>
 </details>
 
-
-
-### 2. Software Management
+### 2. SOFTWARE MANAGEMENT
 <details>
-<summary><b>Package Manager & Bloat Uninstaller</b></summary>
+<summary><b>Apps & Packages</b></summary>
 <br>
-Efficiently manage your applications.
 <ul>
-  <li><b>WinGet GUI:</b> Search, install, and batch-update software from the Microsoft repository.</li>
-  <li><b>Bloat Uninstaller:</b> Whitelist-protected removal of pre-installed Windows junk.</li>
+  <li><b>Package Manager:</b> A full GUI for <b>WinGet</b>. Search, install, and batch-update software from Microsoft's official repository.</li>
+  <li><b>Bloat Uninstaller:</b> Scan for and remove pre-installed Windows junk apps using a safe whitelist system.</li>
 </ul>
 </details>
 
-### 3. System Optimization
+### 3. SYSTEM OPTIMIZATION
 <details>
-<summary><b>Privacy & Tweaks</b></summary>
+<summary><b>Performance & Maintenance</b></summary>
 <br>
-Customize Windows behavior with simple toggles.
 <ul>
-  <li><b>Privacy:</b> Disable Telemetry, Advertising ID, and Bing Search.</li>
-  <li><b>Performance:</b> One-click high-priority process boosting and deep system cleaning tools for temp files.</li>
+  <li><b>Privacy & Tweaks:</b> One-click registry toggles (e.g., Disable Telemetry, Remove Bing Search, Classic Context Menu).</li>
+  <li><b>System Cleaner:</b> deep cleaning tools for temporary files, cache, and system junk.</li>
+  <li><b>File Scanner:</b> Analyze disk usage and identify large files taking up space.</li>
+  <li><b>Startup Manager:</b> View and disable applications that launch automatically at boot to improve startup speed.</li>
+  <li><b>Service Manager:</b> Manage Windows background services to free up resources.</li>
+  <li><b>Process Priority:</b> Real-time management of process CPU priorities to boost foreground apps.</li>
+</ul>
+</details>
+
+### 4. DIAGNOSTICS & REPAIR
+<details>
+<summary><b>Troubleshooting</b></summary>
+<br>
+<ul>
+  <li><b>Network Tools:</b> Utilities for connectivity testing, DNS flushing, and IP configuration.</li>
+  <li><b>Windows Repair:</b> Automated execution of Windows troubleshooting commands (DISM Check/Scan/Restore and SFC Scannow) to fix corrupted system files.</li>
 </ul>
 </details>
 
