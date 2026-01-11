@@ -108,14 +108,51 @@ class HardwareModule:
         threading.Thread(target=_target, daemon=True).start()
 
     # ==========================================
-    # DATA FETCHING
+    # DATA FETCHING (PowerShell / WMI)
     # ==========================================
     def _get_battery_data(self):
+        """
+        Attempts to fetch battery data using Win32_Battery (Legacy) 
+        and falls back to Win32_PortableBattery (Modern) if needed.
+        """
         try:
-            cmd = "Get-CimInstance -ClassName Win32_Battery | Select-Object DesignCapacity, FullChargeCapacity, CycleCount | ConvertTo-Json"
-            raw = subprocess.check_output(["powershell", "-Command", cmd], text=True).strip()
+            # Enhanced PowerShell script to try multiple sources
+            ps_script = """
+            $bat = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
+            if (-not $bat) {
+                $bat = Get-CimInstance -ClassName Win32_PortableBattery -ErrorAction SilentlyContinue
+            }
+            
+            # If we found a battery, format the output
+            if ($bat) {
+                # Handle cases with multiple batteries (take the first one)
+                $bat = $bat | Select-Object -First 1
+                
+                # Normalize property names (PortableBattery uses slightly different names sometimes)
+                $res = [PSCustomObject]@{
+                    DesignCapacity     = if ($bat.DesignCapacity) { $bat.DesignCapacity } else { 0 }
+                    FullChargeCapacity = if ($bat.FullChargeCapacity) { $bat.FullChargeCapacity } else { 0 }
+                    CycleCount         = if ($bat.CycleCount) { $bat.CycleCount } else { 0 }
+                }
+                $res | ConvertTo-Json -Compress
+            }
+            """
+            
+            # Run the command
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            
+            raw = subprocess.check_output(
+                ["powershell", "-Command", ps_script], 
+                text=True, 
+                startupinfo=startupinfo
+            ).strip()
+            
             return json.loads(raw) if raw else None
-        except: return None
+            
+        except Exception as e:
+            print(f"Battery Fetch Error: {e}")
+            return None
 
     def _get_disk_data(self):
         try:
