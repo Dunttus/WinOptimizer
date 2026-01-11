@@ -153,14 +153,31 @@ class HardwareModule:
     # ==========================================
     def _build_battery_ui(self, data):
         section = self.create_section_frame("Battery Health & Reports")
+        
+        # FIX: Handle cases where values are None (JSON null) by forcing 0/1
+        # .get() returns None if key exists but is null, so we use 'or 0' to force integer
+        full = 0
+        design = 1
+        
         if data:
-            full = data.get("FullChargeCapacity", 0)
-            design = data.get("DesignCapacity", 1)
+            full = data.get("FullChargeCapacity") or 0
+            design = data.get("DesignCapacity") or 1
+            
+        # Ensure we don't divide by zero if design capacity is missing
+        if design <= 0: design = 1
+
+        if data and full > 0:
             health = round((full / design) * 100, 1)
+            
             ctk.CTkLabel(section, text=f"Battery Health: {health}%", font=("Arial", 14, "bold")).pack(pady=5)
             prog = ctk.CTkProgressBar(section, height=12, progress_color="#00E676" if health > 80 else "#FFA726")
             prog.set(health/100)
             prog.pack(fill="x", padx=50, pady=10)
+            
+            # Show cycle count if available
+            cycles = data.get("CycleCount")
+            if cycles:
+                ctk.CTkLabel(section, text=f"Cycle Count: {cycles}", font=("Arial", 11), text_color="gray").pack()
         else:
             ctk.CTkLabel(section, text="No active battery detected.", text_color="gray").pack(pady=10)
 

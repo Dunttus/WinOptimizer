@@ -172,7 +172,8 @@ class DashboardModule:
     def run_backup(self):
         def _thread_task():
             try:
-                self.backup_btn.configure(state="disabled", text="Backing up...")
+                self.frame.after(0, lambda: self.backup_btn.configure(state="disabled", text="Backing up..."))
+                
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 backup_dir = os.path.join(os.path.expanduser("~"), "Documents", "WinOptimize_Backups")
                 if not os.path.exists(backup_dir): os.makedirs(backup_dir)
@@ -181,10 +182,15 @@ class DashboardModule:
                 subprocess.run(f'reg export HKLM "{file_path}" /y', shell=True, check=True)
                 
                 self.frame.after(0, lambda: messagebox.showinfo("Backup Success", f"Registry backup created:\n{file_path}"))
+            
             except Exception as e:
-                self.frame.after(0, lambda: messagebox.showerror("Backup Error", f"Failed: {e}"))
+                # FIX: Convert error to string immediately so it persists
+                error_msg = str(e)
+                self.frame.after(0, lambda: messagebox.showerror("Backup Error", f"Failed: {error_msg}"))
+            
             finally:
                 self.frame.after(0, lambda: self.backup_btn.configure(state="normal", text="Backup Registry Now"))
+        
         threading.Thread(target=_thread_task, daemon=True).start()
 
     # --- Monitoring Loop ---
