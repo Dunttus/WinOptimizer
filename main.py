@@ -72,7 +72,7 @@ class WinOptimizerApp(ctk.CTk):
         self.current_module_key = None
         self.nav_buttons = {}
         
-        # --- Menu Structure Definition ---
+        # --- Menu Structure Definition (Boxed Sections) ---
         self.menu_structure = [
             {
                 'header': 'Overview',
@@ -110,9 +110,9 @@ class WinOptimizerApp(ctk.CTk):
 
         first_module_key = None
         
-        # Build the "Boxed" UI
+        # Build the Boxed Sidebar UI
         for section in self.menu_structure:
-            # Create a box (Frame) for each section
+            # Create a box (Frame) for each category
             section_box = ctk.CTkFrame(self.sidebar_scroll, fg_color="#2b2b2b", border_width=1, border_color="#3d3d3d")
             section_box.pack(fill="x", pady=(0, 15), padx=5)
 
@@ -151,7 +151,7 @@ class WinOptimizerApp(ctk.CTk):
         return btn
 
     def show_module(self, key):
-        """Switches between modules."""
+        """Switches between modules and triggers background loading."""
         # 1. Stop background threads
         if self.current_module_key == "dashboard" and "dashboard" in self.modules:
             if hasattr(self.modules["dashboard"], "stop_monitoring"):
@@ -182,9 +182,13 @@ class WinOptimizerApp(ctk.CTk):
         if key in self.modules:
             self.modules[key].frame.pack(fill="both", expand=True)
 
-            # 6. Start Dashboard threads if needed
+            # 6. ASYNC LOADING TRIGGERS
             if key == "dashboard" and hasattr(self.modules[key], "start_monitoring"):
                 self.modules[key].start_monitoring()
+            
+            # FIX: Trigger async load for Hardware Health to prevent freezing
+            if key == "hardware" and hasattr(self.modules[key], "start_load"):
+                self.modules[key].start_load()
                 
             self.current_module_key = key
 

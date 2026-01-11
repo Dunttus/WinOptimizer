@@ -7,131 +7,61 @@
 
 **A modern, all-in-one system utility suite for Windows built with Python & CustomTkinter.**
 
-WinOptimize 11 streamlines Windows maintenance by combining a powerful **Package Manager GUI**, **System Debloater**, and **Repair Tools** into a single, professional dark-mode interface.
+WinOptimize 11 streamlines Windows maintenance by combining a powerful **Package Manager GUI**, **System Debloater**, and **Deep Hardware Diagnostics** into a single, professional interface.
 
 ---
 
 ## 🖥️ Feature Tabs Overview
 
-### 1️⃣ Overview
+### 1. Overview
 <details open>
-<summary><b>Dashboard</b></summary>
+<summary><b>Dashboard & Hardware Health</b></summary>
 <br>
-The central command center for your system.
+The central command center for system monitoring and physical health.
 <ul>
-  <li><b>Live Monitoring:</b> Real-time circular gauges for <b>CPU</b>, <b>RAM</b>, and <b>Disk</b> usage.</li>
-  <li><b>System Specs:</b> Instant view of Hostname, OS Build, GPU, and Uptime.</li>
-  <li><b>Status:</b> Quick health check status at a glance.</li>
-  <li><b>Hardware Health:</b> Deep-dive diagnostics including battery wear analysis, S.M.A.R.T. storage metrics (Temp, Life Remaining, R/W Errors), and Silicon specs (RAM Speed, GPU Drivers, and CPU Thermals).</li>
-</ul>
+  <li><b>Dashboard:</b> Real-time circular gauges for CPU, RAM, and Disk usage with live system specs.</li>
+  <li><b>Hardware Health:</b> A dedicated diagnostic suite with <b>asynchronous loading</b> to prevent UI freezing.
+    <ul>
+      <li><b>Battery Health:</b> Estimated health percentage, cycle counts, and a one-click <b>Official Windows Battery Report</b> generator that prompts to open immediately upon completion.</li>
+      <li><b>Silicon & Memory:</b> Live CPU temperatures (using °C) and detailed <b>RAM Slot Mapping</b> showing Manufacturer, Speed, and Capacity per slot.</li>
+      <li><b>Storage Reliability:</b> Deep S.M.A.R.T. data including drive temperature, <b>Life Remaining %</b>, and physical Read/Write error tracking.</li>
+    </ul>
+  </li>
 </ul>
 </details>
 
-### 2️⃣ Software Management
+
+
+### 2. Software Management
 <details>
-<summary><b>Package Manager</b> (WinGet GUI)</summary>
+<summary><b>Package Manager & Bloat Uninstaller</b></summary>
 <br>
-A fully-featured GUI for the Microsoft Winget CLI.
+Efficiently manage your applications.
 <ul>
-  <li><b>Store Search:</b> Search and download apps from the public Microsoft repository.</li>
-  <li><b>Smart Progress:</b> Clean, non-intrusive download progress updates (every 5%).</li>
-  <li><b>Batch Updates:</b> "Update Winget Apps" button sequentially updates all your software (skipping self-updating processes).</li>
-  <li><b>Precision Grid:</b> Professional UI identifying App IDs, Versions, and Install Sources.</li>
+  <li><b>WinGet GUI:</b> Search, install, and batch-update software from the Microsoft repository.</li>
+  <li><b>Bloat Uninstaller:</b> Whitelist-protected removal of pre-installed Windows junk.</li>
 </ul>
 </details>
 
-<details>
-<summary><b>Bloat Uninstaller</b></summary>
-<br>
-Remove pre-installed junk safely.
-<ul>
-  <li><b>Whitelist Protection:</b> Only targets known bloatware (Xbox, Weather, News, Solitaire, etc.).</li>
-  <li><b>Safety First:</b> Prevents accidental removal of critical system components.</li>
-</ul>
-</details>
-
-### 3️⃣ System Optimization
+### 3. System Optimization
 <details>
 <summary><b>Privacy & Tweaks</b></summary>
 <br>
 Customize Windows behavior with simple toggles.
 <ul>
-  <li><b>Privacy:</b> Disable Telemetry and Bing Search results in Start Menu.</li>
-  <li><b>UI Tweaks:</b> Restore "Classic" Context Menu (Win 11) and disable Lock Screen ads.</li>
+  <li><b>Privacy:</b> Disable Telemetry, Advertising ID, and Bing Search.</li>
+  <li><b>Performance:</b> One-click high-priority process boosting and deep system cleaning tools for temp files.</li>
 </ul>
 </details>
 
-<details>
-<summary><b>System Cleaner</b></summary>
-<br>
-Free up disk space by removing temporary junk.
-<ul>
-  <li><b>Deep Scan:</b> Cleans User Temp, System Temp, Prefetch, and Windows Update Cache.</li>
-  <li><b>Smart Skip:</b> Automatically detects and skips locked files to prevent crashes.</li>
-</ul>
-</details>
+---
 
-<details>
-<summary><b>File Scanner</b></summary>
-<br>
-Analyze your drive for clutter.
-<ul>
-  <li><b>Large Files:</b> Instantly find files larger than 100MB.</li>
-  <li><b>Duplicate Finder:</b> Scans for duplicate files to recover wasted space.</li>
-</ul>
-</details>
+## 🎨 UI & Performance Highlights
 
-<details>
-<summary><b>Startup Manager</b></summary>
-<br>
-Improve Windows boot times.
-<ul>
-  <li><b>Registry Scan:</b> Detects startup entries in `HKCU` and `HKLM` hives.</li>
-  <li><b>Delete Entries:</b> Remove persistent programs that slow down your login.</li>
-</ul>
-</details>
-
-<details>
-<summary><b>Service Manager</b></summary>
-<br>
-Optimize background services.
-<ul>
-  <li><b>Debloat Mode:</b> Disable Telemetry, DiagTrack, and SysMain (Superfetch).</li>
-  <li><b>Protection:</b> Prevents disabling critical core services (Network, Audio, Defender).</li>
-</ul>
-</details>
-
-<details>
-<summary><b>Process Priority</b></summary>
-<br>
-Allocate resources to active apps.
-<ul>
-  <li><b>Boost Mode:</b> Force specific active applications (Games, IDEs) to "High Priority".</li>
-  <li><b>Power Plan:</b> Toggle "Ultimate Performance" power plans directly.</li>
-</ul>
-</details>
-
-### 4️⃣ Diagnostics & Repair
-<details>
-<summary><b>Network Tools</b></summary>
-<br>
-Fix connectivity issues instantly.
-<ul>
-  <li><b>One-Click Fixes:</b> Flush DNS, Renew IP, and Reset Winsock.</li>
-  <li><b>Diagnostics:</b> Run Latency Pings and generate detailed HTML WLAN Reports.</li>
-</ul>
-</details>
-
-<details>
-<summary><b>Windows Repair</b></summary>
-<br>
-Fix corrupted Windows system files.
-<ul>
-  <li><b>SFC Scannow:</b> Runs the System File Checker to repair integrity violations.</li>
-  <li><b>DISM Restore:</b> Uses the Deployment Image Servicing and Management tool to fix the system image.</li>
-  <li><b>CHKDSK:</b> Schedules a Disk Check for the next system restart.</li>
-</ul>
-</details>
+* **Boxed Navigation Sidebar:** A modern, scrollable sidebar that groups tools into logical categories (Overview, Software, Optimization, Repair) using distinct visual frames.
+* **Asynchronous Logic:** Heavy PowerShell and WMI hardware queries run in background threads, ensuring the app remains fully responsive while gathering data.
+* **Persistent Action Footer:** The Hardware Health tab features a "Refresh" button docked to the bottom corner, allowing for instant data updates without losing your scroll position.
+* **Zero-Emoji Backend:** Clean internal code structure to ensure maximum compatibility across different Python environments.
 
 ---
 
@@ -139,25 +69,20 @@ Fix corrupted Windows system files.
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/Dunttus/WinOptimizer.git
-    ```
-    ```bash
+    git clone [https://github.com/Dunttus/WinOptimizer.git](https://github.com/Dunttus/WinOptimizer.git)
     cd WinOptimizer
     ```
 
-2.  **Install Python and dependencies:**
-    ```bash
-    winget install Python.Python.3.14
-    ```
+2.  **Install dependencies:**
     ```bash
     pip install customtkinter psutil pillow
     ```
 
-4.  **Run as Administrator:**
+3.  **Run as Administrator:**
     * Right-click your terminal or IDE and select **"Run as Administrator"**.
     * Execute the main script:
     ```bash
-    python.exe main.py
+    python main.py
     ```
 
 ---
@@ -165,11 +90,9 @@ Fix corrupted Windows system files.
 ## ⚠️ Safety Disclaimer
 
 > [!WARNING]
-> **This tool modifies Windows Registry keys and System Files.**
+> **This tool modifies Windows Registry keys and Hardware Settings.**
 
-* **Administrator Rights:** Required for most features.
-* **License Notice:** The Package Manager installs apps from public repositories. You must own a valid license for any paid software installed.
-* **Liability:** Always create a **System Restore Point** before performing deep cleaning or mass uninstallations.
+Accuracy of hardware diagnostics (S.M.A.R.T. and Thermal zones) depends on manufacturer driver support. Always use the **Registry Backup** feature before applying deep system tweaks.
 
 ---
 
@@ -180,15 +103,12 @@ Fix corrupted Windows system files.
 * **AI Assistance:** Partly vibe coded with Gemini
 
 ### 📚 Open Source Libraries
-Powered by these amazing projects:
 * **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** - Modern UI framework
-* **[psutil](https://github.com/giampaolo/psutil)** - System & process monitoring
+* **[psutil](https://github.com/giampaolo/psutil)** - System monitoring
 * **[Pillow](https://github.com/python-pillow/Pillow)** - Image processing
 
 ---
 
 ## 📄 License
 
-
 This project is licensed under the **GPL-3.0 License**.
-
