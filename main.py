@@ -32,6 +32,8 @@ ScannerModule = safe_import("modules.scanner", "ScannerModule")
 StartupModule = safe_import("modules.startup", "StartupModule")
 ServicesModule = safe_import("modules.services", "ServicesModule")
 ProcessesModule = safe_import("modules.processes", "ProcessesModule")
+# --- ADDED POWER MODULE HERE ---
+PowerModule = safe_import("modules.power", "PowerModule") 
 NetworkModule = safe_import("modules.network", "NetworkModule")
 RepairModule = safe_import("modules.repair", "RepairModule")
 
@@ -96,7 +98,9 @@ class WinOptimizerApp(ctk.CTk):
                     ('File Scanner', 'scanner', ScannerModule),
                     ('Startup Manager', 'startup', StartupModule),
                     ('Service Manager', 'services', ServicesModule),
-                    ('Process Priority', 'processes', ProcessesModule)
+                    ('Process Priority', 'processes', ProcessesModule),
+                    # --- ADDED MENU ITEM HERE ---
+                    ('Power Plans', 'power', PowerModule) 
                 ]
             },
             {
