@@ -56,24 +56,21 @@ Customize Windows behavior with simple toggles.
 
 ---
 
-## 🎨 UI & Performance Highlights
-
-* **Boxed Navigation Sidebar:** A modern, scrollable sidebar that groups tools into logical categories (Overview, Software, Optimization, Repair) using distinct visual frames.
-* **Asynchronous Logic:** Heavy PowerShell and WMI hardware queries run in background threads, ensuring the app remains fully responsive while gathering data.
-* **Persistent Action Footer:** The Hardware Health tab features a "Refresh" button docked to the bottom corner, allowing for instant data updates without losing your scroll position.
-* **Zero-Emoji Backend:** Clean internal code structure to ensure maximum compatibility across different Python environments.
-
----
-
 ## ⚙️ Installation
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/Dunttus/WinOptimizer.git](https://github.com/Dunttus/WinOptimizer.git)
+    git clone https://github.com/Dunttus/WinOptimizer.git
+    cd WinOptimizer
+    ```
+    ```bash
     cd WinOptimizer
     ```
 
 2.  **Install dependencies:**
+    ```bash
+    winget install Python.Python.3.14
+    ```
     ```bash
     pip install customtkinter psutil pillow
     ```
@@ -82,7 +79,7 @@ Customize Windows behavior with simple toggles.
     * Right-click your terminal or IDE and select **"Run as Administrator"**.
     * Execute the main script:
     ```bash
-    python main.py
+    python.exe main.py
     ```
 
 ---
@@ -91,8 +88,9 @@ Customize Windows behavior with simple toggles.
 
 > [!WARNING]
 > **This tool modifies Windows Registry keys and Hardware Settings.**
-
-Accuracy of hardware diagnostics (S.M.A.R.T. and Thermal zones) depends on manufacturer driver support. Always use the **Registry Backup** feature before applying deep system tweaks.
+* **Administrator Rights:** Required for most features.
+* **License Notice:** The Package Manager installs apps from public repositories. You must own a valid license for any paid software installed.
+* **Liability:** Always create a **System Restore Point** before performing deep cleaning or mass uninstallations.
 
 ---
 
@@ -110,5 +108,6 @@ Accuracy of hardware diagnostics (S.M.A.R.T. and Thermal zones) depends on manuf
 ---
 
 ## 📄 License
+
 
 This project is licensed under the **GPL-3.0 License**.
