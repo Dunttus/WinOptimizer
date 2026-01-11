@@ -12,8 +12,7 @@ class TweaksModule:
         add_info_section(self.frame, "Privacy & Tweaks", 
                          "Customize Windows behavior. Toggle switches to Enable/Disable features instantly.")
 
-        # --- Backup Section (Top) ---
-        self.setup_backup_ui()
+        # --- Backup Section Removed (Moved to Dashboard) ---
 
         # --- Settings Container ---
         self.scroll_frame = ctk.CTkScrollableFrame(self.frame, fg_color="transparent")
@@ -103,8 +102,8 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager",
                 "value": "RotatingLockScreenEnabled",
                 "type": winreg.REG_DWORD,
-                "on_val": 0,
-                "off_val": 1
+                "on_val": 0, 
+                "off_val": 1 
             },
 
             # --- ANNOYANCES ---
@@ -115,8 +114,8 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
                 "value": "DisallowShaking",
                 "type": winreg.REG_DWORD,
-                "on_val": 1,
-                "off_val": 0
+                "on_val": 1, 
+                "off_val": 0 
             },
             {
                 "name": "Disable Telemetry (Basic)",
@@ -125,8 +124,8 @@ class TweaksModule:
                 "path": r"Software\Policies\Microsoft\Windows\DataCollection",
                 "value": "AllowTelemetry",
                 "type": winreg.REG_DWORD,
-                "on_val": 0,
-                "off_val": 1
+                "on_val": 0, 
+                "off_val": 1 
             }
         ]
 
@@ -137,87 +136,52 @@ class TweaksModule:
         btn_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=15)
         
-        ctk.CTkLabel(btn_frame, text="Note: Some changes require restarting File Explorer to take effect.", 
-                     text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
-        
-        ctk.CTkButton(btn_frame, text="Restart Explorer", command=self.restart_explorer, 
-                      fg_color="#F57C00", hover_color="#E65100", width=150).pack(side="right")
+        ctk.CTkLabel(btn_frame, text="Note: Some changes require restarting File Explorer to take effect.", text_color="gray", font=("Arial", 10)).pack(side="left")
 
-    # --- BACKUP SYSTEM ---
-    def setup_backup_ui(self):
-        backup_frame = ctk.CTkFrame(self.frame, fg_color="#262626", corner_radius=6, border_width=1, border_color="#404040")
-        backup_frame.pack(fill="x", padx=20, pady=(0, 10))
+        restart_btn = ctk.CTkButton(btn_frame, text="Restart Explorer", width=120, height=30,
+                                    fg_color="#D32F2F", hover_color="#B71C1C",
+                                    command=self.restart_explorer)
+        restart_btn.pack(side="right")
 
-        # Icon/Title
-        ctk.CTkLabel(backup_frame, text="🛡️ Safety First", 
-                     font=ctk.CTkFont(size=12, weight="bold"), text_color="#00E676", anchor="w").pack(side="left", padx=15, pady=10)
-        
-        # Info
-        ctk.CTkLabel(backup_frame, text="Create a backup before applying changes.", 
-                     font=ctk.CTkFont(size=12), text_color="#B0B0B0", anchor="w").pack(side="left", padx=5)
-
-        # Button
-        ctk.CTkButton(backup_frame, text="Backup Registry", command=self.backup_registry, 
-                      fg_color="#1F6AA5", width=120, height=28).pack(side="right", padx=15, pady=8)
-
-    def backup_registry(self):
-        try:
-            # Generate filename with timestamp
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-            desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-            filename = f"WinOptimize_Backup_{timestamp}.reg"
-            filepath = os.path.join(desktop, filename)
-
-            # Use Windows native reg export command
-            # Exporting HKCU and HKLM\Software usually covers 99% of Tweaks
-            cmd = f'reg export HKEY_CURRENT_USER "{filepath}" /y'
-            
-            subprocess.run(cmd, shell=True, check=True)
-            messagebox.showinfo("Backup Success", f"Registry Backup saved to Desktop:\n\n{filename}")
-            
-        except subprocess.CalledProcessError:
-            messagebox.showerror("Backup Failed", "Could not export Registry key. Ensure you have Admin rights.")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-
-    # --- RENDERER ---
     def render_tweaks(self):
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
-
         for tweak in self.tweaks:
-            row = ctk.CTkFrame(self.scroll_frame, fg_color="#2b2b2b", corner_radius=6)
-            row.pack(fill="x", pady=5)
+            row = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+            row.pack(fill="x", pady=8)
+
+            # Labels
+            text_frame = ctk.CTkFrame(row, fg_color="transparent")
+            text_frame.pack(side="left", padx=5)
             
-            # Text Info
-            info_f = ctk.CTkFrame(row, fg_color="transparent")
-            info_f.pack(side="left", padx=15, pady=10, fill="x", expand=True)
-            
-            ctk.CTkLabel(info_f, text=tweak["name"], font=ctk.CTkFont(size=13, weight="bold"), anchor="w").pack(fill="x")
-            ctk.CTkLabel(info_f, text=tweak["desc"], font=ctk.CTkFont(size=11), text_color="#aaaaaa", anchor="w").pack(fill="x")
+            ctk.CTkLabel(text_frame, text=tweak["name"], font=("Arial", 13, "bold")).pack(anchor="w")
+            ctk.CTkLabel(text_frame, text=tweak["desc"], font=("Arial", 11), text_color="gray").pack(anchor="w")
 
             # Switch
-            switch_var = ctk.BooleanVar()
-            switch = ctk.CTkSwitch(row, text="", variable=switch_var, width=50,
+            switch_var = ctk.BooleanVar(value=self.check_tweak_state(tweak))
+            switch = ctk.CTkSwitch(row, text="", variable=switch_var, onvalue=True, offvalue=False,
                                    command=lambda t=tweak, v=switch_var: self.toggle_tweak(t, v))
-            switch.pack(side="right", padx=20)
-            
-            # Set Initial State
-            is_active = self.check_registry(tweak)
-            switch_var.set(is_active)
-            
+            switch.pack(side="right", padx=10)
             self.switches.append(switch)
 
-    # --- LOGIC ---
-    def check_registry(self, tweak):
+    def check_tweak_state(self, tweak):
         try:
             key = winreg.OpenKey(tweak["hive"], tweak["path"], 0, winreg.KEY_READ)
+            
+            # Special handling for Context Menu hack (it relies on key existence, not value)
+            if tweak.get("is_special") == "context_menu":
+                winreg.CloseKey(key)
+                return True # Key exists = Hack Enabled (Classic Menu)
+                
             val, _ = winreg.QueryValueEx(key, tweak["value"])
             winreg.CloseKey(key)
             return val == tweak["on_val"]
+            
         except FileNotFoundError:
-            if tweak.get("is_special") == "context_menu": return False
+            # If key doesn't exist...
+            if tweak.get("is_special") == "context_menu": return False # Key missing = Default Win11 Menu
+            
+            # For Copilot, if key missing, it's ON (default behavior), so our switch (Disable) is False
             if tweak["name"] == "Disable Windows Copilot": return False
+            
             return False
         except Exception:
             return False
@@ -227,29 +191,35 @@ class TweaksModule:
         target_val = tweak["on_val"] if state else tweak["off_val"]
         
         try:
+            # Special logic for Context Menu
             if tweak.get("is_special") == "context_menu":
                 if state:
+                    # Create the key to enable classic menu
                     key = winreg.CreateKey(tweak["hive"], tweak["path"])
                     winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "")
                     winreg.CloseKey(key)
                 else:
+                    # Delete the key to restore Win11 menu
                     self.delete_key_recursive(tweak["hive"], tweak["path"])
                 return
 
+            # Normal logic
             key = winreg.CreateKey(tweak["hive"], tweak["path"])
             winreg.SetValueEx(key, tweak["value"], 0, tweak["type"], target_val)
             winreg.CloseKey(key)
             
         except PermissionError:
-            var.set(not state)
+            var.set(not state) # Revert switch
             messagebox.showerror("Permission Denied", "Run as Administrator.")
         except Exception as e:
             var.set(not state)
             print(f"Error: {e}")
 
     def delete_key_recursive(self, hive, subkey):
-        try: winreg.DeleteKey(hive, subkey)
-        except: pass 
+        try:
+            winreg.DeleteKey(hive, subkey)
+        except Exception:
+            pass
 
     def restart_explorer(self):
         subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True)
