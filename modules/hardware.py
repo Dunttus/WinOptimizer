@@ -26,7 +26,6 @@ class HardwareModule:
         # --- Content Container ---
         self.scroll_frame = ctk.CTkScrollableFrame(self.frame, fg_color="transparent")
         
-        # Track UI state to prevent duplicate buttons
         self.ui_initialized = False
 
     def start_load(self, force=False):
@@ -34,7 +33,6 @@ class HardwareModule:
         if force or not self.scroll_frame.winfo_ismapped():
             self.prog.start()
             
-            # If this is the FIRST load, show the loading screen
             if not self.ui_initialized:
                 self.scroll_frame.pack_forget()
                 self.loading_frame.pack(expand=True)
@@ -44,19 +42,17 @@ class HardwareModule:
     def _fetch_data_thread(self):
         """Gathers all metrics in a background thread."""
         try:
-            battery = self._get_battery_data()
             disks = self._get_disk_data()
             silicon = self._get_silicon_data()
-            self.frame.after(0, lambda: self._render_ui(battery, disks, silicon))
+            self.frame.after(0, lambda: self._render_ui(disks, silicon))
         except Exception as e:
             print(f"Hardware Logic Error: {e}")
             self.frame.after(0, self._render_error)
 
-    def _render_ui(self, battery, disks, silicon):
+    def _render_ui(self, disks, silicon):
         self.prog.stop()
         self.loading_frame.pack_forget()
 
-        # 1. Dock the footer ONLY ONCE
         if not self.ui_initialized:
             self.footer_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
             self.footer_frame.pack(side="bottom", fill="x", padx=20, pady=(0, 10))
@@ -67,16 +63,14 @@ class HardwareModule:
                                         height=35, fg_color="#1f538d")
             self.refresh_btn.pack(side="right")
 
-            # Pack the scrollable area to fill the rest of the space
             self.scroll_frame.pack(side="top", fill="both", expand=True, padx=20, pady=10)
             self.ui_initialized = True
 
-        # 2. Clear old content inside the scroll area
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
 
-        # 3. Build hardware sections
-        self._build_battery_ui(battery)
+        # Build Sections
+        self._build_battery_ui() 
         self._build_silicon_ui(silicon)
         self._build_disk_ui(disks)
 
@@ -108,52 +102,8 @@ class HardwareModule:
         threading.Thread(target=_target, daemon=True).start()
 
     # ==========================================
-    # DATA FETCHING (PowerShell / WMI)
+    # DATA FETCHING
     # ==========================================
-    def _get_battery_data(self):
-        """
-        Attempts to fetch battery data using Win32_Battery (Legacy) 
-        and falls back to Win32_PortableBattery (Modern) if needed.
-        """
-        try:
-            # Enhanced PowerShell script to try multiple sources
-            ps_script = """
-            $bat = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
-            if (-not $bat) {
-                $bat = Get-CimInstance -ClassName Win32_PortableBattery -ErrorAction SilentlyContinue
-            }
-            
-            # If we found a battery, format the output
-            if ($bat) {
-                # Handle cases with multiple batteries (take the first one)
-                $bat = $bat | Select-Object -First 1
-                
-                # Normalize property names (PortableBattery uses slightly different names sometimes)
-                $res = [PSCustomObject]@{
-                    DesignCapacity     = if ($bat.DesignCapacity) { $bat.DesignCapacity } else { 0 }
-                    FullChargeCapacity = if ($bat.FullChargeCapacity) { $bat.FullChargeCapacity } else { 0 }
-                    CycleCount         = if ($bat.CycleCount) { $bat.CycleCount } else { 0 }
-                }
-                $res | ConvertTo-Json -Compress
-            }
-            """
-            
-            # Run the command
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            
-            raw = subprocess.check_output(
-                ["powershell", "-Command", ps_script], 
-                text=True, 
-                startupinfo=startupinfo
-            ).strip()
-            
-            return json.loads(raw) if raw else None
-            
-        except Exception as e:
-            print(f"Battery Fetch Error: {e}")
-            return None
-
     def _get_disk_data(self):
         try:
             ps_cmd = (
@@ -169,7 +119,9 @@ class HardwareModule:
                 "  } "
                 "} | ConvertTo-Json"
             )
-            raw = subprocess.check_output(["powershell", "-Command", ps_cmd], text=True).strip()
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            raw = subprocess.check_output(["powershell", "-Command", ps_cmd], text=True, startupinfo=startupinfo).strip()
             if not raw: return []
             data = json.loads(raw)
             return data if isinstance(data, list) else [data]
@@ -180,43 +132,27 @@ class HardwareModule:
         try:
             ram = "Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Speed, Capacity, Manufacturer | ConvertTo-Json"
             temp = "Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature | Select-Object CurrentTemperature | ConvertTo-Json"
-            res['ram'] = json.loads(subprocess.check_output(["powershell", "-Command", ram], text=True).strip() or "[]")
-            res['temp'] = json.loads(subprocess.check_output(["powershell", "-Command", temp], text=True).strip() or "[]")
+            
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            
+            res['ram'] = json.loads(subprocess.check_output(["powershell", "-Command", ram], text=True, startupinfo=startupinfo).strip() or "[]")
+            res['temp'] = json.loads(subprocess.check_output(["powershell", "-Command", temp], text=True, startupinfo=startupinfo).strip() or "[]")
         except: pass
         return res
 
     # ==========================================
     # UI BUILDING
     # ==========================================
-    def _build_battery_ui(self, data):
+    def _build_battery_ui(self):
         section = self.create_section_frame("Battery Health & Reports")
         
-        # FIX: Handle cases where values are None (JSON null) by forcing 0/1
-        # .get() returns None if key exists but is null, so we use 'or 0' to force integer
-        full = 0
-        design = 1
-        
-        if data:
-            full = data.get("FullChargeCapacity") or 0
-            design = data.get("DesignCapacity") or 1
-            
-        # Ensure we don't divide by zero if design capacity is missing
-        if design <= 0: design = 1
-
-        if data and full > 0:
-            health = round((full / design) * 100, 1)
-            
-            ctk.CTkLabel(section, text=f"Battery Health: {health}%", font=("Arial", 14, "bold")).pack(pady=5)
-            prog = ctk.CTkProgressBar(section, height=12, progress_color="#00E676" if health > 80 else "#FFA726")
-            prog.set(health/100)
-            prog.pack(fill="x", padx=50, pady=10)
-            
-            # Show cycle count if available
-            cycles = data.get("CycleCount")
-            if cycles:
-                ctk.CTkLabel(section, text=f"Cycle Count: {cycles}", font=("Arial", 11), text_color="gray").pack()
-        else:
-            ctk.CTkLabel(section, text="No active battery detected.", text_color="gray").pack(pady=10)
+        # UPDATED TEXT HERE
+        info_text = (
+            "Generates a detailed HTML report containing usage history,\n"
+            "capacity trends, and estimated battery life statistics."
+        )
+        ctk.CTkLabel(section, text=info_text, text_color="gray", justify="center").pack(pady=(10, 5))
 
         report_btn = ctk.CTkButton(section, text="Generate Windows Battery Report", 
                                    command=lambda: self.run_battery_report(report_btn))
