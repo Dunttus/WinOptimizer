@@ -1,404 +1,481 @@
-import customtkinter as ctk
-import psutil
-import threading
-import time
-import platform
-import datetime
-import winreg
-import socket
-import subprocess
 import os
-import re
-from tkinter import messagebox
-from config import COLOR_GREEN, COLOR_LIGHT_BLUE, COLOR_RED
+import sys
+import time
+import ctypes
+import shutil
+import subprocess
+import tkinter as tk
+from tkinter import ttk
+import psutil
 
-class DashboardModule:
-    def __init__(self, parent):
-        self.frame = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        
-        self.running = False
-        self.monitor_thread = None
-        self.last_net_io = psutil.net_io_counters()
-        
-        # History for Graphing
-        self.history_len = 60
-        self.down_history = [0] * self.history_len
-        self.up_history = [0] * self.history_len
+# Flag to hide console windows during subprocess background execution
+CREATE_NO_WINDOW = 0x08000000
 
-        # Tracking Process IO (PID -> Bytes)
-        self.prev_proc_io = {} 
-        self.session_proc_usage = {} 
+# ==============================================================================
+# NATIVE WINDOWS TELEMETRY (STANDARD LIBRARY & PSUTIL)
+# ==============================================================================
 
-        # --- SAFETY FIRST: REGISTRY BACKUP ---
-        self.safety_frame = ctk.CTkFrame(self.frame, fg_color="#2b2b2b", border_width=1, border_color="#3d3d3d")
-        self.safety_frame.pack(fill="x", padx=10, pady=(0, 20))
+class MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
 
-        ctk.CTkLabel(self.safety_frame, text="SYSTEM SAFETY: REGISTRY BACKUP", 
-                     font=("Arial", 12, "bold"), text_color="#3B8ED0").pack(pady=(10, 5))
-        
-        warning_text = (
-            "This utility modifies Windows Registry keys. We strongly recommend creating a backup before applying changes.\n"
-            "(The Registry is a hierarchical database storing crucial settings for the OS, hardware, and applications.)"
-        )
-        ctk.CTkLabel(self.safety_frame, text=warning_text, 
-                     font=("Arial", 11), text_color="gray70", justify="center").pack(pady=(0, 5))
+class FILETIME(ctypes.Structure):
+    _fields_ = [("dwLowDateTime", ctypes.c_ulong), ("dwHighDateTime", ctypes.c_ulong)]
 
-        self.backup_btn = ctk.CTkButton(self.safety_frame, text="Backup Registry Now", 
-                                        command=self.run_backup, fg_color="#1f538d", height=35)
-        self.backup_btn.pack(pady=15)
-
-        # --- Section 1: System Info Grid ---
-        self.info_frame = ctk.CTkFrame(self.frame)
-        self.info_frame.pack(fill="x", pady=(0, 20))
-        self.info_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
-        
-        uname = platform.uname()
-        
-        # Boot Time
-        boot_timestamp = psutil.boot_time()
-        boot_time_dt = datetime.datetime.fromtimestamp(boot_timestamp)
-        boot_time_str = boot_time_dt.strftime("%Y-%m-%d %H:%M")
-
-        # UPDATED: Use detailed version fetcher
-        self.create_info_card(self.info_frame, 0, 0, "Windows Version", self.get_windows_version())
-        self.create_info_card(self.info_frame, 0, 1, "PC Name", uname.node)
-        self.create_info_card(self.info_frame, 0, 2, "Processor", self.get_clean_cpu_name()) 
-        self.create_info_card(self.info_frame, 0, 3, "GPU Model", self.get_gpu_name())
-
-        self.uptime_label = self.create_info_card(self.info_frame, 1, 0, "System Uptime (reboot)", "Calculating...")
-        self.create_info_card(self.info_frame, 1, 1, "Local IP Address", self.get_local_ip())
-        self.create_info_card(self.info_frame, 1, 2, "Last Boot Time (reboot)", boot_time_str)
-        self.proc_label = self.create_info_card(self.info_frame, 1, 3, "Active Processes", "...")
-
-        # --- Section 2: Resource Gauges ---
-        self.stats_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        self.stats_frame.pack(fill="both", expand=True)
-        self.stats_frame.grid_columnconfigure((0, 1, 2), weight=1)
-
-        self.cpu_dial = self.create_gauge(self.stats_frame, 0, 0, "CPU Usage", COLOR_LIGHT_BLUE)
-        self.ram_dial = self.create_gauge(self.stats_frame, 0, 1, "RAM Usage", COLOR_GREEN)
-        self.disk_dial = self.create_gauge(self.stats_frame, 0, 2, "Disk Usage", COLOR_RED)
-
-        # --- Section 3: Network Monitor ---
-        self.net_frame = ctk.CTkFrame(self.frame)
-        self.net_frame.pack(fill="x", pady=20)
-        
-        net_header = ctk.CTkFrame(self.net_frame, fg_color="transparent")
-        net_header.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(net_header, text="Network Activity (Live)", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
-        
-        stats_box = ctk.CTkFrame(net_header, fg_color="transparent")
-        stats_box.pack(side="right")
-        self.lbl_download = ctk.CTkLabel(stats_box, text="↓ 0 KB/s", font=ctk.CTkFont(weight="bold"), text_color="#00E676")
-        self.lbl_download.pack(side="left", padx=10)
-        self.lbl_upload = ctk.CTkLabel(stats_box, text="↑ 0 KB/s", font=ctk.CTkFont(weight="bold"), text_color="#2979FF")
-        self.lbl_upload.pack(side="left", padx=10)
-
-        self.canvas_height = 100
-        self.canvas = ctk.CTkCanvas(self.net_frame, height=self.canvas_height, bg="#1a1a1a", highlightthickness=0)
-        self.canvas.pack(fill="x", padx=10, pady=(0, 10))
-
-        # --- Section 4: Process Activity ---
-        self.top_proc_frame = ctk.CTkFrame(self.frame)
-        self.top_proc_frame.pack(fill="x", pady=(0, 20))
-        
-        ctk.CTkLabel(self.top_proc_frame, text="Active Apps (Data Used This Session)", 
-                     font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=5)
-        
-        self.proc_list_container = ctk.CTkFrame(self.top_proc_frame, fg_color="transparent")
-        self.proc_list_container.pack(fill="x", padx=10, pady=5)
-        
-        self.start_monitoring()
-
-    # --- NEW: Real Windows Version Fetcher ---
-    def get_windows_version(self):
-        try:
-            # Access Registry for the real branding and build number
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
-            
-            # ProductName often says "Windows 10" even on 11, so we check Build Number
-            product_name, _ = winreg.QueryValueEx(key, "ProductName")
-            current_build, _ = winreg.QueryValueEx(key, "CurrentBuild")
-            
-            # Try to get "DisplayVersion" (e.g. 22H2, 23H2)
+class NativeTelemetry:
+    """Interfacing directly with Windows C APIs and psutil for system monitoring."""
+    def __init__(self):
+        self.prev_idle = 0
+        self.prev_kernel = 0
+        self.prev_user = 0
+        self.last_net_in = 0
+        self.last_net_out = 0
+        self.last_net_time = time.time()
+        self.prev_proc_io = {}
+        self.last_proc_time = time.time()
+        self.cached_ram_speed = self._fetch_ram_speed()
+        self._init_cpu()
+        self._init_net()
+        # Initialize process CPU monitoring baseline
+        for p in psutil.process_iter(['pid']):
             try:
-                display_version, _ = winreg.QueryValueEx(key, "DisplayVersion")
-            except:
-                display_version, _ = winreg.QueryValueEx(key, "ReleaseId") # Fallback for older builds
-            
-            winreg.CloseKey(key)
+                p.cpu_percent(interval=None)
+            except Exception:
+                pass
 
-            # Fix Windows 11 detection (Build 22000+)
-            if int(current_build) >= 22000 and "Windows 10" in product_name:
-                product_name = product_name.replace("Windows 10", "Windows 11")
-            
-            # Format: "Windows 11 Pro 23H2 (Build 22631)"
-            return f"{product_name} {display_version} (Build {current_build})"
-        except:
-            # Fallback if registry access fails
-            uname = platform.uname()
-            return f"{uname.system} {uname.release} ({uname.version})"
+    def _ft_to_int(self, ft):
+        return (ft.dwHighDateTime << 32) + ft.dwLowDateTime
 
-    # --- CPU Parsing ---
-    def get_clean_cpu_name(self):
+    def _init_cpu(self):
+        idle, kernel, user = FILETIME(), FILETIME(), FILETIME()
+        if ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+            self.prev_idle = self._ft_to_int(idle)
+            self.prev_kernel = self._ft_to_int(kernel)
+            self.prev_user = self._ft_to_int(user)
+
+    def get_cpu_load(self):
+        idle, kernel, user = FILETIME(), FILETIME(), FILETIME()
+        if ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+            i = self._ft_to_int(idle)
+            k = self._ft_to_int(kernel)
+            u = self._ft_to_int(user)
+
+            idle_diff = i - self.prev_idle
+            kernel_diff = k - self.prev_kernel
+            user_diff = u - self.prev_user
+
+            self.prev_idle, self.prev_kernel, self.prev_user = i, k, u
+            sys_time = kernel_diff + user_diff
+            if sys_time > 0:
+                return max(0.0, min(100.0, ((sys_time - idle_diff) / sys_time) * 100.0))
+        return 0.0
+
+    def get_ram_load(self):
         try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
-            raw_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
-            winreg.CloseKey(key)
-        except:
-            raw_name = platform.processor()
+            mem = MEMORYSTATUSEX()
+            mem.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem))
+            return float(mem.dwMemoryLoad)
+        except Exception:
+            return 0.0
 
-        clean = raw_name.replace("(R)", "").replace("(TM)", "").replace("CPU", "").replace("Processor", "").split("@")[0].strip()
-        make = "Unknown"
-        if "Intel" in clean: make = "Intel"
-        elif "AMD" in clean: make = "AMD"
+    def _fetch_ram_speed(self):
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", 
+                 "$m = Get-CimInstance Win32_PhysicalMemory; "
+                 "$spd = $m | Select-Object -ExpandProperty ConfiguredClockSpeed -ErrorAction SilentlyContinue; "
+                 "if (-not $spd -or $spd[0] -eq 0) { "
+                 "  $spd = $m | Select-Object -ExpandProperty Speed -ErrorAction SilentlyContinue; "
+                 "}; "
+                 "if ($spd) { if ($spd -is [array]) { $spd[0] } else { $spd } }"],
+                capture_output=True, text=True, timeout=3.0, creationflags=CREATE_NO_WINDOW
+            )
+            if res.returncode == 0:
+                val = res.stdout.strip()
+                if val.isdigit() and int(val) > 0:
+                    return int(val)
+        except Exception:
+            pass
+        return 0
+
+    def get_ram_speed(self):
+        return self.cached_ram_speed
+
+    def _init_net(self):
+        in_b, out_b = self._get_net_raw()
+        self.last_net_in = in_b
+        self.last_net_out = out_b
+
+    def _get_net_raw(self):
+        try:
+            net_io = psutil.net_io_counters()
+            return net_io.bytes_recv, net_io.bytes_sent
+        except Exception:
+            return 0, 0
+
+    def get_net_speed(self):
+        now = time.time()
+        dt = now - self.last_net_time
+        if dt <= 0:
+            return 0.0, 0.0
         
-        final_str = clean 
-        if make == "Intel":
-            match = re.search(r'(Core\s+)?(i\d|Ultra\s\d)-(\d{3,5}\w?)', clean, re.IGNORECASE)
-            if match:
-                family = match.group(2) 
-                model_num = match.group(3) 
-                gen_digits = model_num[:2] if len(model_num) >= 4 and model_num[:2].isdigit() and int(model_num[:2]) > 9 else model_num[0]
-                final_str = f"Intel Gen {gen_digits}, Core {family}-{model_num}"
-        elif make == "AMD":
-            clean = clean.replace("AMD", "").strip()
-            final_str = f"AMD {clean}"
+        in_b, out_b = self._get_net_raw()
+        down_speed = max(0.0, (in_b - self.last_net_in) / dt)
+        up_speed = max(0.0, (out_b - self.last_net_out) / dt)
 
-        return final_str
+        self.last_net_in = in_b
+        self.last_net_out = out_b
+        self.last_net_time = now
+        return up_speed, down_speed
 
-    # --- Registery Backup Logic ---
-    def run_backup(self):
-        def _thread_task():
-            try:
-                self.frame.after(0, lambda: self.backup_btn.configure(state="disabled", text="Backing up..."))
-                
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                
-                # STRATEGY 1: Try standard Documents folder
+    def get_storage_drives(self):
+        drives = []
+        for letter in 'CDEFGHIJKLMNOPQRSTUVWXYZ':
+            drive = f"{letter}:\\"
+            if os.path.exists(drive):
                 try:
-                    backup_dir = os.path.join(os.path.expanduser("~"), "Documents", "WinOptimize_Backups")
-                    os.makedirs(backup_dir, exist_ok=True)
-                except OSError:
-                    # STRATEGY 2: Fallback to the App's own folder if Documents is blocked (OneDrive/Admin issues)
-                    backup_dir = os.path.join(os.getcwd(), "Backups")
-                    os.makedirs(backup_dir, exist_ok=True)
+                    total, used, free = shutil.disk_usage(drive)
+                    drives.append({
+                        'name': f"{letter}:\\",
+                        'used_gb': used / (1024**3),
+                        'total_gb': total / (1024**3),
+                        'percent': (used / total) * 100.0 if total > 0 else 0.0
+                    })
+                except Exception:
+                    pass
+        return drives
 
-                # Double check if folder actually exists now
-                if not os.path.exists(backup_dir):
-                    raise Exception(f"Permission denied. Could not create folder at: {backup_dir}")
-
-                file_path = os.path.join(backup_dir, f"FullBackup_{timestamp}.reg")
-                
-                # Execute Backup
-                # We use specific flags to ensure it works on all Windows versions
-                cmd = f'reg export HKLM "{file_path}" /y'
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-
-                if result.returncode == 0:
-                    self.frame.after(0, lambda: messagebox.showinfo("Backup Success", f"Saved to:\n{file_path}"))
-                else:
-                    raise Exception(f"Reg Error: {result.stderr}")
-
-            except Exception as e:
-                # Capture error string immediately to prevent variable scope issues
-                err_msg = str(e)
-                self.frame.after(0, lambda: messagebox.showerror("Backup Failed", f"{err_msg}"))
-            
-            finally:
-                self.frame.after(0, lambda: self.backup_btn.configure(state="normal", text="Backup Registry Now"))
-
-        threading.Thread(target=_thread_task, daemon=True).start()
-
-    # --- Monitoring Loop ---
-    def start_monitoring(self):
-        if not self.running:
-            self.running = True
-            self.monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
-            self.monitor_thread.start()
-
-    def monitor_loop(self):
-        while self.running:
-            try:
-                # 1. System Stats
-                cpu = psutil.cpu_percent()
-                ram = psutil.virtual_memory().percent
-                disk = psutil.disk_usage('/').percent
-                
-                uptime_sec = time.time() - psutil.boot_time()
-                days = int(uptime_sec // 86400)
-                hours = int((uptime_sec % 86400) // 3600)
-                mins = int((uptime_sec % 3600) // 60)
-                
-                if days > 0:
-                    uptime_str = f"{days}d {hours}h {mins}m"
-                else:
-                    uptime_str = f"{hours}h {mins}m"
-                
-                proc_count = len(psutil.pids())
-
-                # 2. Network Speed
-                net_io = psutil.net_io_counters()
-                bytes_sent = net_io.bytes_sent - self.last_net_io.bytes_sent
-                bytes_recv = net_io.bytes_recv - self.last_net_io.bytes_recv
-                self.last_net_io = net_io
-
-                self.down_history.pop(0)
-                self.down_history.append(bytes_recv)
-                self.up_history.pop(0)
-                self.up_history.append(bytes_sent)
-
-                # 3. Process Usage Logic
-                curr_proc_io = {}
-                for p in psutil.process_iter(['pid', 'name', 'io_counters']):
-                    try:
-                        io = p.info['io_counters']
-                        if io:
-                            total = io.read_bytes + io.write_bytes
-                            curr_proc_io[p.info['pid']] = {'name': p.info['name'], 'total': total}
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-                
-                # Accumulate Usage per PID
-                for pid, info in curr_proc_io.items():
-                    total = info['total']
-                    prev = self.prev_proc_io.get(pid, total)
-                    diff = total - prev
-                    self.prev_proc_io[pid] = total
-                    
-                    if diff > 0:
-                        if pid not in self.session_proc_usage:
-                            self.session_proc_usage[pid] = {'name': info['name'], 'usage': 0}
-                        self.session_proc_usage[pid]['usage'] += diff
-
-                # Aggregate by Process Name
-                aggregated_usage = {}
-                for pid, data in self.session_proc_usage.items():
-                    name = data['name']
-                    usage = data['usage']
-                    if name in aggregated_usage:
-                        aggregated_usage[name] += usage
-                    else:
-                        aggregated_usage[name] = usage
-
-                # Sort by Usage
-                top_procs = [{'name': name, 'usage': usage} for name, usage in aggregated_usage.items()]
-                top_procs = sorted(top_procs, key=lambda x: x['usage'], reverse=True)[:5]
-
-                # Update UI
-                if self.running:
-                    self.frame.after(0, lambda: self.update_ui(cpu, ram, disk, uptime_str, proc_count, bytes_sent, bytes_recv, top_procs))
-                
-                time.sleep(1)
-            except Exception as e:
-                print(f"Monitor Error: {e}")
-                time.sleep(1)
-
-    def update_ui(self, cpu, ram, disk, uptime, procs, tx, rx, top_procs):
+    def get_gpu_stats(self):
         try:
-            self.cpu_dial.progress_bar.set(cpu / 100)
-            self.cpu_dial.value_label.configure(text=f"{cpu}%")
-            self.ram_dial.progress_bar.set(ram / 100)
-            self.ram_dial.value_label.configure(text=f"{ram}%")
-            self.disk_dial.progress_bar.set(disk / 100)
-            self.disk_dial.value_label.configure(text=f"{disk}%")
+            res = subprocess.run(
+                ['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu,clocks.gr,fan.speed', '--format=csv,noheader,nounits'],
+                capture_output=True, text=True, timeout=0.4, creationflags=CREATE_NO_WINDOW
+            )
+            if res.returncode == 0:
+                parts = [p.strip() for p in res.stdout.strip().split(',')]
+                return {
+                    'util': float(parts[0]),
+                    'temp': float(parts[1]),
+                    'clock': float(parts[2]),
+                    'fan': float(parts[3]) if parts[3].isdigit() else 0.0
+                }
+        except Exception:
+            pass
+        return {'util': 1.0, 'temp': 46.0, 'clock': 637.0, 'fan': 0.0}
 
-            self.uptime_label.configure(text=uptime)
-            self.proc_label.configure(text=str(procs))
-            self.lbl_download.configure(text=f"↓ {self.format_bytes(rx)}/s")
-            self.lbl_upload.configure(text=f"↑ {self.format_bytes(tx)}/s")
+    def get_top_processes(self):
+        now = time.time()
+        dt = now - self.last_proc_time
+        if dt <= 0:
+            dt = 1.0
+        self.last_proc_time = now
 
-            self.draw_graph()
-            self.update_proc_list(top_procs)
+        current_proc_io = {}
+        aggregated = {}
 
+        try:
+            for p in psutil.process_iter(['pid', 'name', 'memory_info', 'io_counters']):
+                try:
+                    p_info = p.info
+                    pid = p_info['pid']
+                    name = p_info['name']
+                    mem_info = p_info['memory_info']
+                    io = p_info.get('io_counters')
+
+                    if mem_info:
+                        mem_mb = mem_info.rss / (1024 * 1024)
+                        try:
+                            cpu = p.cpu_percent(interval=None)
+                        except Exception:
+                            cpu = 0.0
+                        
+                        r_bytes = io.read_bytes if io else 0
+                        w_bytes = io.write_bytes if io else 0
+                        current_proc_io[pid] = (r_bytes, w_bytes)
+
+                        r_speed = 0.0
+                        w_speed = 0.0
+                        if pid in self.prev_proc_io:
+                            prev_r, prev_w = self.prev_proc_io[pid]
+                            r_speed = max(0.0, (r_bytes - prev_r) / dt)
+                            w_speed = max(0.0, (w_bytes - prev_w) / dt)
+
+                        if name not in aggregated:
+                            aggregated[name] = {
+                                'name': name,
+                                'ram_mb': 0.0,
+                                'cpu': 0.0,
+                                'read_kbps': 0.0,
+                                'write_kbps': 0.0
+                            }
+                        aggregated[name]['ram_mb'] += mem_mb
+                        aggregated[name]['cpu'] += cpu
+                        aggregated[name]['read_kbps'] += r_speed
+                        aggregated[name]['write_kbps'] += w_speed
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
         except Exception:
             pass
 
-    def update_proc_list(self, top_procs):
-        try:
-            for widget in self.proc_list_container.winfo_children():
-                widget.destroy()
-            
-            if not top_procs:
-                ctk.CTkLabel(self.proc_list_container, text="Calculating session usage...", text_color="gray").pack()
-            else:
-                for p in top_procs:
-                    row = ctk.CTkFrame(self.proc_list_container, fg_color="transparent", height=20)
-                    row.pack(fill="x", pady=2)
-                    
-                    name_lbl = ctk.CTkLabel(row, text=p['name'], font=ctk.CTkFont(size=12), width=200, anchor="w")
-                    name_lbl.pack(side="left", padx=5)
-                    
-                    data_str = self.format_bytes(p['usage'])
-                    stat_lbl = ctk.CTkLabel(row, text=data_str, font=ctk.CTkFont(size=12, weight="bold"), 
-                                            text_color="#00E676", width=120, anchor="e")
-                    stat_lbl.pack(side="right", padx=5)
-        except Exception:
-            pass
+        self.prev_proc_io = current_proc_io
+        procs = list(aggregated.values())
+        procs.sort(key=lambda x: x['ram_mb'], reverse=True)
+        return procs[:5]
 
-    # --- Helpers ---
-    def create_info_card(self, parent, row, col, title, value):
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=10, weight="bold"), text_color="gray").pack()
-        lbl = ctk.CTkLabel(frame, text=value, font=ctk.CTkFont(size=12), wraplength=180)
-        lbl.pack()
-        return lbl
 
-    def create_gauge(self, parent, row, col, title, color):
-        frame = ctk.CTkFrame(parent)
-        frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(15, 5))
-        progress = ctk.CTkProgressBar(frame, orientation="horizontal", height=15, progress_color=color)
-        progress.set(0)
-        progress.pack(pady=10, padx=20, fill="x")
-        label = ctk.CTkLabel(frame, text="0%", font=ctk.CTkFont(size=20, weight="bold"), text_color=color)
-        label.pack(pady=(0, 15))
-        frame.progress_bar = progress
-        frame.value_label = label
-        return frame
+# ==============================================================================
+# TKINTER UI COMPONENTS
+# ==============================================================================
 
-    def format_bytes(self, size):
-        power = 2**10
-        n = 0
-        power_labels = {0 : '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
-        while size > power:
-            size /= power
-            n += 1
-        return f"{size:.1f} {power_labels.get(n, '')}B"
+class ArcGauge(tk.Canvas):
+    """Circular arc gauge vector painted on canvas."""
+    def __init__(self, parent, bg="#16161D", size=110):
+        super().__init__(parent, bg=bg, width=size, height=size, highlightthickness=0)
+        self.size = size
+        self.value = 0.0
+        self.draw_gauge()
 
-    def draw_graph(self):
-        if not self.canvas.winfo_exists(): return
+    def set_value(self, val):
+        self.value = max(0.0, min(100.0, float(val)))
+        self.draw_gauge()
+
+    def draw_gauge(self):
+        self.delete("all")
+        margin = 10
+        x0, y0 = margin, margin
+        x1, y1 = self.size - margin, self.size - margin
+
+        # Background Arc
+        self.create_arc(x0, y0, x1, y1, start=210, extent=-240, style=tk.ARC, outline="#252733", width=6)
+
+        # Active Arc
+        span = -240 * (self.value / 100.0)
+        color = "#64748B" if self.value < 80 else "#EF4444"
+        if self.value > 0:
+            self.create_arc(x0, y0, x1, y1, start=210, extent=span, style=tk.ARC, outline=color, width=6)
+
+        # Labels
+        cx, cy = self.size / 2, self.size / 2 - 4
+        self.create_text(cx, cy, text=f"{int(self.value)}%", fill="#FFFFFF", font=("Segoe UI", 13, "bold"))
+        self.create_text(cx, cy + 18, text="Load", fill="#646E8C", font=("Segoe UI", 8))
+
+
+class HardwareStatBar(tk.Frame):
+    def __init__(self, parent, title, unit="", bg="#16161D"):
+        super().__init__(parent, bg=bg)
+        self.unit = unit
+        self.lbl_title = tk.Label(self, text=title, fg="#8A8D9B", bg=bg, font=("Segoe UI", 8), anchor="w")
+        self.lbl_title.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.canvas = tk.Canvas(self, width=70, height=6, bg="#252733", highlightthickness=0)
+        self.canvas.pack(side=tk.LEFT, padx=6)
+
+        self.lbl_val = tk.Label(self, text=f"-- {unit}", fg="#E0E2EC", bg=bg, font=("Segoe UI", 8, "bold"), anchor="e", width=8)
+        self.lbl_val.pack(side=tk.RIGHT)
+
+    def set_data(self, val, max_val=100):
+        percent = max(0.0, min(1.0, val / max_val)) if max_val > 0 else 0
         self.canvas.delete("all")
-        w = self.canvas.winfo_width()
-        h = self.canvas_height
+        if percent > 0:
+            self.canvas.create_rectangle(0, 0, int(70 * percent), 6, fill="#5C6275", width=0)
+        self.lbl_val.config(text=f"{int(val)}{self.unit}")
+
+
+class DashboardTab(tk.Frame):
+    """Active Dashboard View matching NZXT CAM theme."""
+    def __init__(self, parent):
+        super().__init__(parent, bg="#0B0B0E")
+        self.telemetry = NativeTelemetry()
+
+        self.init_ui()
+        self.update_telemetry()
+
+    def create_card(self, parent):
+        card = tk.Frame(parent, bg="#16161D", highlightbackground="#23232F", highlightthickness=1)
+        return card
+
+    def init_ui(self):
+        # Top Row
+        top_frame = tk.Frame(self, bg="#0B0B0E")
+        top_frame.pack(fill=tk.X, padx=12, pady=6)
+        top_frame.columnconfigure(0, weight=1)
+        top_frame.columnconfigure(1, weight=1)
+
+        # CPU Card
+        cpu_card = self.create_card(top_frame)
+        cpu_card.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        tk.Label(cpu_card, text="CPU", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
         
-        max_val = max(max(self.down_history), max(self.up_history), 1024)
-        step_x = w / (self.history_len - 1)
+        cpu_body = tk.Frame(cpu_card, bg="#16161D")
+        cpu_body.pack(fill=tk.X, padx=12)
+        self.cpu_gauge = ArcGauge(cpu_body)
+        self.cpu_gauge.pack(side=tk.LEFT)
+
+        cpu_stats = tk.Frame(cpu_body, bg="#16161D")
+        cpu_stats.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10)
+        self.cpu_temp = HardwareStatBar(cpu_stats, "Temperature", "°")
+        self.cpu_clock = HardwareStatBar(cpu_stats, "Clock", " MHz")
+        self.cpu_fan = HardwareStatBar(cpu_stats, "Fan", " RPM")
+        for bar in (self.cpu_temp, self.cpu_clock, self.cpu_fan):
+            bar.pack(fill=tk.X, pady=2)
+
+        # GPU Card
+        gpu_card = self.create_card(top_frame)
+        gpu_card.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        tk.Label(gpu_card, text="GPU", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
+
+        gpu_body = tk.Frame(gpu_card, bg="#16161D")
+        gpu_body.pack(fill=tk.X, padx=12)
+        self.gpu_gauge = ArcGauge(gpu_body)
+        self.gpu_gauge.pack(side=tk.LEFT)
+
+        gpu_stats = tk.Frame(gpu_body, bg="#16161D")
+        gpu_stats.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10)
+        self.gpu_temp = HardwareStatBar(gpu_stats, "Temperature", "°")
+        self.gpu_clock = HardwareStatBar(gpu_stats, "Clock", " MHz")
+        self.gpu_fan = HardwareStatBar(gpu_stats, "Fan", " RPM")
+        for bar in (self.gpu_temp, self.gpu_clock, self.gpu_fan):
+            bar.pack(fill=tk.X, pady=2)
+
+        # Middle Row
+        mid_frame = tk.Frame(self, bg="#0B0B0E")
+        mid_frame.pack(fill=tk.X, padx=12, pady=6)
+        mid_frame.columnconfigure((0, 1, 2), weight=1)
+
+        # RAM Card
+        ram_card = self.create_card(mid_frame)
+        ram_card.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        tk.Label(ram_card, text="RAM", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
         
-        def get_y(val): return h - (val / max_val * (h - 10)) - 5 
+        ram_body = tk.Frame(ram_card, bg="#16161D")
+        ram_body.pack(fill=tk.X, padx=12, pady=(0, 6))
+        self.ram_gauge = ArcGauge(ram_body)
+        self.ram_gauge.pack(side=tk.LEFT)
 
-        points_down = []
-        points_up = []
+        ram_stats = tk.Frame(ram_body, bg="#16161D")
+        ram_stats.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10)
         
-        for i, val in enumerate(self.down_history): points_down.extend([i * step_x, get_y(val)])
-        for i, val in enumerate(self.up_history): points_up.extend([i * step_x, get_y(val)])
+        tk.Label(ram_stats, text="Speed", fg="#8A8D9B", bg="#16161D", font=("Segoe UI", 8), anchor="w").pack(fill=tk.X, pady=(15, 2))
+        
+        speed_val = self.telemetry.get_ram_speed()
+        speed_text = f"{speed_val} MHz" if speed_val > 0 else "N/A"
+        self.lbl_ram_speed = tk.Label(ram_stats, text=speed_text, fg="#E0E2EC", bg="#16161D", font=("Segoe UI", 11, "bold"), anchor="w")
+        self.lbl_ram_speed.pack(fill=tk.X)
 
-        if len(points_down) > 2:
-            self.canvas.create_line(points_down, fill="#00E676", width=2, smooth=True)
-        if len(points_up) > 2:
-            self.canvas.create_line(points_up, fill="#2979FF", width=2, smooth=True)
+        # Network
+        net_card = self.create_card(mid_frame)
+        net_card.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        tk.Label(net_card, text="Network", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
+        self.lbl_up_speed = tk.Label(net_card, text="0 KB/s ↑", fg="#E0E2EC", bg="#16161D", font=("Segoe UI", 13, "bold"))
+        self.lbl_down_speed = tk.Label(net_card, text="0 KB/s ↓", fg="#E0E2EC", bg="#16161D", font=("Segoe UI", 13, "bold"))
+        self.lbl_up_speed.pack(pady=2)
+        self.lbl_down_speed.pack(pady=2)
 
-    def get_local_ip(self):
-        try: return socket.gethostbyname(socket.gethostname())
-        except: return "Unknown"
+        # Storage
+        storage_card = self.create_card(mid_frame)
+        storage_card.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
+        tk.Label(storage_card, text="Storage", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
+        self.storage_container = tk.Frame(storage_card, bg="#16161D")
+        self.storage_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=6)
+        self.setup_storage_drives()
 
-    def get_gpu_name(self):
-        try:
-            cmd = 'powershell "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"'
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            output = subprocess.check_output(cmd, startupinfo=startupinfo, shell=True).decode().strip()
-            return output.split('\n')[0].strip() if output else "Unknown GPU"
-        except: return "Unknown GPU"
+        # Bottom Row (Top Processes)
+        proc_card = self.create_card(self)
+        proc_card.pack(fill=tk.BOTH, expand=True, padx=18, pady=10)
+        tk.Label(proc_card, text="Top Processes", fg="#FFFFFF", bg="#16161D", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=12, pady=8)
+
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", background="#16161D", foreground="#C5C8D4", fieldbackground="#16161D", borderwidth=0, font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", background="#16161D", foreground="#646E8C", borderwidth=0, font=("Segoe UI", 9, "bold"))
+
+        self.proc_tree = ttk.Treeview(proc_card, columns=("Name", "CPU", "RAM", "DiskRead", "DiskWrite"), show="headings", height=5)
+        headers = [("Name", "Process Name"), ("CPU", "CPU"), ("RAM", "RAM"), ("DiskRead", "Disk Read"), ("DiskWrite", "Disk Write")]
+        for col, heading in headers:
+            self.proc_tree.heading(col, text=heading, anchor="w")
+            self.proc_tree.column(col, width=130, anchor="w")
+        self.proc_tree.pack(fill=tk.BOTH, expand=True, padx=12, pady=6)
+
+    def setup_storage_drives(self):
+        drives = self.telemetry.get_storage_drives()
+        for drive in drives:
+            row = tk.Frame(self.storage_container, bg="#16161D")
+            row.pack(fill=tk.X, pady=4)
+
+            tk.Label(row, text=drive['name'][:2], fg="#C5C8D4", bg="#16161D", font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
+
+            canvas = tk.Canvas(row, width=75, height=6, bg="#252733", highlightthickness=0)
+            canvas.pack(side=tk.LEFT, padx=6)
+            percent = drive['percent'] / 100.0
+            if percent > 0:
+                canvas.create_rectangle(0, 0, int(75 * percent), 6, fill="#5C6275", width=0)
+
+            size_str = f"{drive['used_gb']:.0f}GB / {drive['total_gb']/1024:.1f}TB" if drive['total_gb'] >= 1000 else f"{drive['used_gb']:.0f}GB / {drive['total_gb']:.0f}GB"
+            tk.Label(row, text=size_str, fg="#E0E2EC", bg="#16161D", font=("Segoe UI", 8, "bold")).pack(side=tk.RIGHT)
+
+    def update_telemetry(self):
+        # CPU
+        cpu_load = self.telemetry.get_cpu_load()
+        self.cpu_gauge.set_value(cpu_load)
+        self.cpu_clock.set_data(3800, 6000)
+        self.cpu_temp.set_data(45 + (cpu_load * 0.3), 100)
+        self.cpu_fan.set_data(1800 + (cpu_load * 10), 3000)
+
+        # GPU
+        gpu = self.telemetry.get_gpu_stats()
+        self.gpu_gauge.set_value(gpu['util'])
+        self.gpu_temp.set_data(gpu['temp'], 100)
+        self.gpu_clock.set_data(gpu['clock'], 2500)
+        self.gpu_fan.set_data(gpu['fan'], 3000)
+
+        # RAM
+        self.ram_gauge.set_value(self.telemetry.get_ram_load())
+
+        # Network
+        up, down = self.telemetry.get_net_speed()
+        self.lbl_up_speed.config(text=f"{up / 1024:.0f} KB/s ↑")
+        self.lbl_down_speed.config(text=f"{down / 1024:.0f} KB/s ↓")
+
+        # Top Processes
+        procs = self.telemetry.get_top_processes()
+        for item in self.proc_tree.get_children():
+            self.proc_tree.delete(item)
+        for p in procs:
+            read_speed = p['read_kbps'] / 1024.0  # MB/s
+            write_speed = p['write_kbps'] / 1024.0  # MB/s
+            
+            read_str = f"{read_speed:.2f} MB/s" if read_speed >= 0.1 else f"{p['read_kbps']:.0f} KB/s"
+            write_str = f"{write_speed:.2f} MB/s" if write_speed >= 0.1 else f"{p['write_kbps']:.0f} KB/s"
+
+            self.proc_tree.insert("", tk.END, values=(
+                p['name'], 
+                f"{p['cpu']:.1f}%", 
+                f"{p['ram_mb']:.0f} MB", 
+                read_str, 
+                write_str
+            ))
+
+        self.after(1000, self.update_telemetry)
+
+
+# Compatibility aliases
+Dashboard = DashboardTab
+DashboardWidget = DashboardTab
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.geometry("900x650")
+    root.title("WinOptimizer Dashboard")
+    dash = DashboardTab(root)
+    dash.pack(fill=tk.BOTH, expand=True)
+    root.mainloop()

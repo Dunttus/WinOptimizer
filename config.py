@@ -1,9 +1,9 @@
 import os  # Added missing import
 
 # Service Configurations
-ALLOWED_SERVICES = {
-    "SysMain", "DiagTrack", "WSearch", "XblAuthManager", "XblGameSave",
-    "XboxNetApiSvc", "Themes", "wuauserv", "fdPHost", "NcbService", "PcaSvc"
+DISABLABLE_SERVICES = {
+    "SysMain", "DiagTrack", "PcaSvc", 
+    "Fax", "MapsBroker", "RetailDemo", "TabletInputService"
 }
 
 CRITICAL_SERVICES = {
@@ -32,35 +32,50 @@ CLEANER_PATHS = [
     ("Error Reports", r"C:\ProgramData\Microsoft\Windows\WER"),
 ]
 
-# --- App Uninstaller Whitelist ---
-# Only apps containing these strings will be displayed in the Uninstaller
-SAFE_APP_WHITELIST = [
+# Safe Apps Whitelist for Bloat Uninstaller (Includes Office 365 / M365 components & Bloatware)
+SAFE_TO_REMOVE_APPS = [
+    # Microsoft Office / 365 Components
+    "Microsoft.MicrosoftOfficeHub",
+    "Microsoft.Office.Word",
+    "Microsoft.Office.Excel",
+    "Microsoft.Office.PowerPoint",
+    "Microsoft.Office.Outlook",
+    "Microsoft.Office.OneNote",
+    
+    # News, Weather & Feed
     "Microsoft.BingNews",
     "Microsoft.BingWeather",
+    "Microsoft.BingSearch",
+    
+    # Feedback & Help
     "Microsoft.WindowsFeedbackHub",
     "Microsoft.GetHelp",
     "Microsoft.Getstarted",
+    
+    # Communication & Utilities
     "Microsoft.Messaging",
-    "Microsoft.MicrosoftSolitaireCollection",
-    "Microsoft.People",
     "Microsoft.SkypeApp",
     "Microsoft.YourPhone",
-    "Microsoft.ZuneVideo",
-    "Microsoft.ZuneMusic",
+    "Microsoft.People",
     "Microsoft.WindowsAlarms",
     "Microsoft.WindowsMaps",
     "Microsoft.WindowsCamera",
     "Microsoft.WindowsSoundRecorder",
-    "Microsoft.Office.OneNote",
+    "Microsoft.Todos",
+    "Microsoft.PowerAutomateDesktop",
+    "Microsoft.Clipchamp",
+    "Microsoft.Teams",
+    
+    # Media & Gaming
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.ZuneVideo",
+    "Microsoft.ZuneMusic",
     "Microsoft.XboxApp",
     "Microsoft.XboxGameOverlay",
     "Microsoft.XboxGamingOverlay",
     "Microsoft.XboxIdentityProvider",
     "Microsoft.XboxSpeechToTextOverlay",
     "Microsoft.GamingApp",
-    "Microsoft.PowerAutomateDesktop",
-    "Microsoft.Todos",
-    "Microsoft.BingSearch",
 ]
 
 # UI Colors

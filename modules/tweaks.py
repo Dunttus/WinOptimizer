@@ -1,27 +1,125 @@
-import customtkinter as ctk
 import winreg
 import subprocess
-import os
-import datetime
-from tkinter import messagebox
-from utils import add_info_section
+import tkinter as tk
+from tkinter import ttk, messagebox
 
-class TweaksModule:
+class ScrollableFrame:
+    """Custom standard Tkinter scrollable container."""
+    def __init__(self, container, bg_color):
+        self.frame = tk.Frame(container, bg=bg_color)
+        
+        self.canvas = tk.Canvas(self.frame, bg=bg_color, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.frame, orient="vertical", command=self.canvas.yview)
+        self.inner_frame = tk.Frame(self.canvas, bg=bg_color)
+        
+        self.inner_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        if self.inner_frame.winfo_height() > self.canvas.winfo_height():
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            
+    def clear(self):
+        for widget in self.inner_frame.winfo_children():
+            widget.destroy()
+
+    def pack(self, *args, **kwargs):
+        self.frame.pack(*args, **kwargs)
+        
+    def pack_forget(self):
+        self.frame.pack_forget()
+
+
+class ToggleSwitch(tk.Canvas):
+    """Modern custom sliding switch widget built natively in standard Tkinter."""
+    def __init__(self, parent, variable, command=None, width=46, height=24, bg_color="#1c1c1c"):
+        super().__init__(parent, width=width, height=height, bg=bg_color, highlightthickness=0, cursor="hand2")
+        self.variable = variable
+        self.command = command
+        self.width = width
+        self.height = height
+        
+        self.bind("<Button-1>", self.on_click)
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        val = self.variable.get()
+        
+        # Track colors (Active blue vs dark grey)
+        track_bg = "#3B8ED0" if val else "#333333"
+        thumb_fill = "#FFFFFF"
+        
+        r = self.height / 2
+        # Draw pill-shaped background track
+        self.create_oval(0, 0, self.height, self.height, fill=track_bg, outline=track_bg)
+        self.create_oval(self.width - self.height, 0, self.width, self.height, fill=track_bg, outline=track_bg)
+        self.create_rectangle(r, 0, self.width - r, self.height, fill=track_bg, outline=track_bg)
+        
+        # Draw sliding circular thumb
+        pad = 3
+        thumb_d = self.height - (pad * 2)
+        if val:
+            x0 = self.width - thumb_d - pad
+            x1 = self.width - pad
+        else:
+            x0 = pad
+            x1 = thumb_d + pad
+        y0 = pad
+        y1 = self.height - pad
+        
+        self.create_oval(x0, y0, x1, y1, fill=thumb_fill, outline=thumb_fill)
+
+    def on_click(self, event):
+        current = self.variable.get()
+        self.variable.set(not current)
+        self.draw()
+        if self.command:
+            self.command()
+
+
+class TweaksModule(tk.Frame):
+    """Native Tkinter Privacy & Tweaks Module."""
     def __init__(self, parent):
-        self.frame = ctk.CTkFrame(parent)
-        add_info_section(self.frame, "Privacy & Tweaks", 
-                         "Customize Windows behavior. Toggle switches to Enable/Disable features instantly.")
+        super().__init__(parent, bg="#1c1c1c")
 
-        # --- Backup Section Removed (Moved to Dashboard) ---
+        # --- Info Section ---
+        info_frame = tk.Frame(self, bg="#1c1c1c")
+        info_frame.pack(fill="x", padx=20, pady=(20, 10))
+        tk.Label(info_frame, text="Privacy & Tweaks", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        tk.Label(info_frame, text="Customize Windows behavior. Toggle switches to Enable/Disable features instantly.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
+
+        # --- Restart Explorer Button Frame (Bottom) ---
+        btn_frame = tk.Frame(self, bg="#1c1c1c")
+        btn_frame.pack(side="bottom", fill="x", padx=20, pady=15)
+        
+        tk.Label(
+            btn_frame, text="Note: Some changes require restarting File Explorer to take effect.", 
+            fg="gray", bg="#1c1c1c", font=("Segoe UI", 9)
+        ).pack(side="left")
+
+        tk.Button(
+            btn_frame, text="Restart Explorer", width=14, height=1,
+            bg="#D32F2F", fg="white", font=("Segoe UI", 9, "bold"),
+            activebackground="#B71C1C", activeforeground="white", bd=0, cursor="hand2",
+            command=self.restart_explorer
+        ).pack(side="right")
 
         # --- Settings Container ---
-        self.scroll_frame = ctk.CTkScrollableFrame(self.frame, fg_color="transparent")
+        self.scroll_frame = ScrollableFrame(self, bg_color="#1c1c1c")
         self.scroll_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
         # --- Defined Tweaks ---
-        # Each tweak has: Name, Description, Hive, Key Path, Value Name, Value Type, On_Val, Off_Val
         self.tweaks = [
-            # --- UI & VISUALS ---
             {
                 "name": "Taskbar Alignment (Left)",
                 "desc": "Move Start Menu to the Left (Windows 10 Style). Default is Center.",
@@ -29,8 +127,8 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
                 "value": "TaskbarAl",
                 "type": winreg.REG_DWORD,
-                "on_val": 0, # 0 = Left
-                "off_val": 1 # 1 = Center
+                "on_val": 0, 
+                "off_val": 1 
             },
             {
                 "name": "Restore Classic Context Menu",
@@ -50,7 +148,7 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
                 "value": "HideFileExt",
                 "type": winreg.REG_DWORD,
-                "on_val": 0, # 0 = Show
+                "on_val": 0, 
                 "off_val": 1
             },
             {
@@ -60,11 +158,9 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
                 "value": "LaunchTo",
                 "type": winreg.REG_DWORD,
-                "on_val": 1, # 1 = This PC
-                "off_val": 2 # 2 = Quick Access
+                "on_val": 1, 
+                "off_val": 2 
             },
-
-            # --- PRIVACY & ADS ---
             {
                 "name": "Disable Advertising ID",
                 "desc": "Prevents apps from using your ID for cross-app targeted experiences.",
@@ -72,7 +168,7 @@ class TweaksModule:
                 "path": r"Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo",
                 "value": "Enabled",
                 "type": winreg.REG_DWORD,
-                "on_val": 0, # 0 = Disabled
+                "on_val": 0, 
                 "off_val": 1
             },
             {
@@ -92,7 +188,7 @@ class TweaksModule:
                 "path": r"Software\Policies\Microsoft\Windows\WindowsCopilot",
                 "value": "TurnOffWindowsCopilot",
                 "type": winreg.REG_DWORD,
-                "on_val": 1, # 1 = Turn OFF Copilot
+                "on_val": 1, 
                 "off_val": 0
             },
             {
@@ -105,8 +201,6 @@ class TweaksModule:
                 "on_val": 0, 
                 "off_val": 1 
             },
-
-            # --- ANNOYANCES ---
             {
                 "name": "Disable 'Shake to Minimize'",
                 "desc": "Stops windows from minimizing when you shake the active window.",
@@ -132,56 +226,44 @@ class TweaksModule:
         self.switches = []
         self.render_tweaks()
 
-        # Restart Explorer Button (Bottom)
-        btn_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=15)
-        
-        ctk.CTkLabel(btn_frame, text="Note: Some changes require restarting File Explorer to take effect.", text_color="gray", font=("Arial", 10)).pack(side="left")
-
-        restart_btn = ctk.CTkButton(btn_frame, text="Restart Explorer", width=120, height=30,
-                                    fg_color="#D32F2F", hover_color="#B71C1C",
-                                    command=self.restart_explorer)
-        restart_btn.pack(side="right")
-
     def render_tweaks(self):
+        parent = self.scroll_frame.inner_frame
         for tweak in self.tweaks:
-            row = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
-            row.pack(fill="x", pady=8)
+            row = tk.Frame(parent, bg="#1c1c1c")
+            row.pack(fill="x", pady=8, padx=5)
 
-            # Labels
-            text_frame = ctk.CTkFrame(row, fg_color="transparent")
-            text_frame.pack(side="left", padx=5)
+            # Labels Container
+            text_frame = tk.Frame(row, bg="#1c1c1c")
+            text_frame.pack(side="left", padx=5, fill="x", expand=True)
             
-            ctk.CTkLabel(text_frame, text=tweak["name"], font=("Arial", 13, "bold")).pack(anchor="w")
-            ctk.CTkLabel(text_frame, text=tweak["desc"], font=("Arial", 11), text_color="gray").pack(anchor="w")
+            tk.Label(text_frame, text=tweak["name"], font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#1c1c1c", anchor="w").pack(anchor="w")
+            tk.Label(text_frame, text=tweak["desc"], font=("Segoe UI", 9), fg="#888888", bg="#1c1c1c", anchor="w").pack(anchor="w")
 
-            # Switch
-            switch_var = ctk.BooleanVar(value=self.check_tweak_state(tweak))
-            switch = ctk.CTkSwitch(row, text="", variable=switch_var, onvalue=True, offvalue=False,
-                                   command=lambda t=tweak, v=switch_var: self.toggle_tweak(t, v))
-            switch.pack(side="right", padx=10)
-            self.switches.append(switch)
+            # Custom Sliding Toggle Switch
+            switch_var = tk.BooleanVar(value=self.check_tweak_state(tweak))
+            switch = ToggleSwitch(
+                row, variable=switch_var,
+                command=lambda t=tweak, v=switch_var: self.toggle_tweak(t, v),
+                bg_color="#1c1c1c"
+            )
+            switch.pack(side="right", padx=15)
+            self.switches.append((switch, switch_var))
 
     def check_tweak_state(self, tweak):
         try:
             key = winreg.OpenKey(tweak["hive"], tweak["path"], 0, winreg.KEY_READ)
             
-            # Special handling for Context Menu hack (it relies on key existence, not value)
             if tweak.get("is_special") == "context_menu":
                 winreg.CloseKey(key)
-                return True # Key exists = Hack Enabled (Classic Menu)
+                return True 
                 
             val, _ = winreg.QueryValueEx(key, tweak["value"])
             winreg.CloseKey(key)
             return val == tweak["on_val"]
             
         except FileNotFoundError:
-            # If key doesn't exist...
-            if tweak.get("is_special") == "context_menu": return False # Key missing = Default Win11 Menu
-            
-            # For Copilot, if key missing, it's ON (default behavior), so our switch (Disable) is False
+            if tweak.get("is_special") == "context_menu": return False 
             if tweak["name"] == "Disable Windows Copilot": return False
-            
             return False
         except Exception:
             return False
@@ -191,25 +273,21 @@ class TweaksModule:
         target_val = tweak["on_val"] if state else tweak["off_val"]
         
         try:
-            # Special logic for Context Menu
             if tweak.get("is_special") == "context_menu":
                 if state:
-                    # Create the key to enable classic menu
                     key = winreg.CreateKey(tweak["hive"], tweak["path"])
                     winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "")
                     winreg.CloseKey(key)
                 else:
-                    # Delete the key to restore Win11 menu
                     self.delete_key_recursive(tweak["hive"], tweak["path"])
                 return
 
-            # Normal logic
             key = winreg.CreateKey(tweak["hive"], tweak["path"])
             winreg.SetValueEx(key, tweak["value"], 0, tweak["type"], target_val)
             winreg.CloseKey(key)
             
         except PermissionError:
-            var.set(not state) # Revert switch
+            var.set(not state) 
             messagebox.showerror("Permission Denied", "Run as Administrator.")
         except Exception as e:
             var.set(not state)
@@ -222,4 +300,7 @@ class TweaksModule:
             pass
 
     def restart_explorer(self):
-        subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True)
+        subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, creationflags=0x08000000)
+
+# Compatibility alias for main.py dynamic routing
+PrivacyTweaksTab = TweaksModule

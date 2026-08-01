@@ -1,78 +1,156 @@
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
 import os
 import threading
 import subprocess
-from utils import format_size
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 
-class ScannerModule:
+def format_size(size_bytes):
+    """Formats raw byte counts into human-readable strings (KB, MB, GB)."""
+    try:
+        size_bytes = int(size_bytes)
+    except (TypeError, ValueError):
+        return "0 B"
+    
+    if size_bytes == 0:
+        return "0 B"
+    
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(units) - 1:
+        size_bytes /= 1024.0
+        i += 1
+    return f"{size_bytes:.2f} {units[i]}"
+
+
+class ScannerModule(tk.Frame):
+    """Unified, single-scroll File Scanner Module (Duplicates & Large Files)."""
     def __init__(self, parent):
-        self.frame = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        super().__init__(parent, bg="#1c1c1c")
         self.scan_running = False
+
+        # --- Master Single-Scroll Canvas Setup ---
+        self.canvas = tk.Canvas(self, bg="#1c1c1c", highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner_frame = tk.Frame(self.canvas, bg="#1c1c1c")
+
+        self.inner_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
         
+        self.window_id = self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        # Make inner frame match window width dynamically
+        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self.window_id, width=e.width))
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        # Global mousewheel binding for smooth full-page scrolling
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
         # ===========================
         # Section 1: Duplicate Finder
         # ===========================
-        dup_container = ctk.CTkFrame(self.frame)
-        dup_container.pack(fill="x", padx=10, pady=10)
+        dup_container = tk.Frame(self.inner_frame, bg="#222222", bd=1, relief="solid")
+        dup_container.pack(fill="x", padx=20, pady=15)
 
-        ctk.CTkLabel(dup_container, text="Find Duplicate Files (Name & Size Only)", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(10, 5))
+        tk.Label(
+            dup_container, text="📁 Find Duplicate Files (Name & Size Only)", 
+            font=("Segoe UI", 13, "bold"), fg="#ffffff", bg="#222222"
+        ).pack(anchor="w", padx=20, pady=(15, 10))
 
-        # Path & Filter
-        path_row = ctk.CTkFrame(dup_container, fg_color="transparent")
-        path_row.pack(fill="x", padx=10, pady=5)
-        self.dup_path_entry = ctk.CTkEntry(path_row, placeholder_text="Select folder to scan...", width=300)
-        self.dup_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        ctk.CTkButton(path_row, text="Browse", width=80, command=lambda: self.browse_folder(self.dup_path_entry)).pack(side="right")
+        # Path Row
+        path_row = tk.Frame(dup_container, bg="#222222")
+        path_row.pack(fill="x", padx=20, pady=5)
+        
+        self.dup_path_entry = tk.Entry(path_row, bg="#111111", fg="#ffffff", insertbackground="white", font=("Segoe UI", 10), bd=1, relief="solid")
+        self.dup_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), ipady=6)
+        self.dup_path_entry.insert(0, "Select folder to scan...")
+        self.dup_path_entry.bind("<FocusIn>", lambda e: self.dup_path_entry.delete(0, 'end') if self.dup_path_entry.get() == "Select folder to scan..." else None)
 
-        ext_row = ctk.CTkFrame(dup_container, fg_color="transparent")
-        ext_row.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(ext_row, text="Filter extensions (comma separated):").pack(side="left", padx=(0, 10))
-        self.ext_entry = ctk.CTkEntry(ext_row, placeholder_text="e.g. .mp4, jpg, .pdf", width=200)
-        self.ext_entry.pack(side="left")
+        tk.Button(path_row, text="Browse", width=12, command=lambda: self.browse_folder(self.dup_path_entry), bg="#3B8ED0", fg="white", font=("Segoe UI", 9, "bold"), bd=0, cursor="hand2", pady=6).pack(side="right")
+
+        # Extension Filter Row
+        ext_row = tk.Frame(dup_container, bg="#222222")
+        ext_row.pack(fill="x", padx=20, pady=5)
+        
+        tk.Label(ext_row, text="Filter extensions (comma separated):", fg="#b0b0b0", bg="#222222", font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
+        
+        self.ext_entry = tk.Entry(ext_row, width=30, bg="#111111", fg="#ffffff", insertbackground="white", font=("Segoe UI", 10), bd=1, relief="solid")
+        self.ext_entry.pack(side="left", ipady=4)
+        self.ext_entry.insert(0, "e.g. .mp4, jpg, .pdf")
+        self.ext_entry.bind("<FocusIn>", lambda e: self.ext_entry.delete(0, 'end') if self.ext_entry.get() == "e.g. .mp4, jpg, .pdf" else None)
 
         # Control Area
-        ctrl_frame = ctk.CTkFrame(dup_container, fg_color="transparent")
-        ctrl_frame.pack(fill="x", padx=10, pady=5)
+        ctrl_frame = tk.Frame(dup_container, bg="#222222")
+        ctrl_frame.pack(fill="x", padx=20, pady=10)
         
-        self.btn_scan_dup = ctk.CTkButton(ctrl_frame, text="Scan for Duplicates", command=self.toggle_dup_scan)
+        self.btn_scan_dup = tk.Button(ctrl_frame, text="Scan for Duplicates", command=self.toggle_dup_scan, bg="#3B8ED0", fg="white", font=("Segoe UI", 10, "bold"), bd=0, cursor="hand2", padx=16, pady=6)
         self.btn_scan_dup.pack(side="left")
         
-        self.lbl_dup_status = ctk.CTkLabel(ctrl_frame, text="Ready", text_color="gray")
-        self.lbl_dup_status.pack(side="left", padx=20)
+        self.lbl_dup_status = tk.Label(ctrl_frame, text="Ready", fg="#888888", bg="#222222", font=("Segoe UI", 9))
+        self.lbl_dup_status.pack(side="left", padx=15)
 
-        # Results
-        self.dup_results_frame = ctk.CTkScrollableFrame(dup_container, height=250, label_text="Found Duplicates")
-        self.dup_results_frame.pack(fill="x", padx=20, pady=(10, 20))
+        # Results Container
+        self.dup_results_outer = tk.Frame(dup_container, bg="#1c1c1c", bd=1, relief="solid")
+        self.dup_results_outer.pack(fill="x", padx=20, pady=(5, 20))
+        tk.Label(self.dup_results_outer, text=" Found Duplicates ", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
+        
+        self.dup_results_list = tk.Frame(self.dup_results_outer, bg="#1c1c1c")
+        self.dup_results_list.pack(fill="x", padx=5, pady=5)
 
         # ===========================
         # Section 2: Large Files
         # ===========================
-        large_container = ctk.CTkFrame(self.frame)
-        large_container.pack(fill="x", padx=10, pady=(0, 10))
+        large_container = tk.Frame(self.inner_frame, bg="#222222", bd=1, relief="solid")
+        large_container.pack(fill="x", padx=20, pady=(10, 25))
 
-        ctk.CTkLabel(large_container, text="Find Large Files (>100MB)", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(10, 5))
+        tk.Label(
+            large_container, text="🗄️ Find Large Files (>100MB)", 
+            font=("Segoe UI", 13, "bold"), fg="#ffffff", bg="#222222"
+        ).pack(anchor="w", padx=20, pady=(15, 10))
 
-        # Path
-        large_path_row = ctk.CTkFrame(large_container, fg_color="transparent")
-        large_path_row.pack(fill="x", padx=10, pady=5)
-        self.large_path_entry = ctk.CTkEntry(large_path_row, placeholder_text="Select folder to scan...", width=300)
-        self.large_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        ctk.CTkButton(large_path_row, text="Browse", width=80, command=lambda: self.browse_folder(self.large_path_entry)).pack(side="right")
+        # Path Row
+        large_path_row = tk.Frame(large_container, bg="#222222")
+        large_path_row.pack(fill="x", padx=20, pady=5)
+        
+        self.large_path_entry = tk.Entry(large_path_row, bg="#111111", fg="#ffffff", insertbackground="white", font=("Segoe UI", 10), bd=1, relief="solid")
+        self.large_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), ipady=6)
+        self.large_path_entry.insert(0, "Select folder to scan...")
+        self.large_path_entry.bind("<FocusIn>", lambda e: self.large_path_entry.delete(0, 'end') if self.large_path_entry.get() == "Select folder to scan..." else None)
+
+        tk.Button(large_path_row, text="Browse", width=12, command=lambda: self.browse_folder(self.large_path_entry), bg="#3B8ED0", fg="white", font=("Segoe UI", 9, "bold"), bd=0, cursor="hand2", pady=6).pack(side="right")
 
         # Control Area
-        l_ctrl_frame = ctk.CTkFrame(large_container, fg_color="transparent")
-        l_ctrl_frame.pack(fill="x", padx=10, pady=5)
+        l_ctrl_frame = tk.Frame(large_container, bg="#222222")
+        l_ctrl_frame.pack(fill="x", padx=20, pady=10)
 
-        self.btn_scan_large = ctk.CTkButton(l_ctrl_frame, text="Scan for Large Files", command=self.toggle_large_scan)
+        self.btn_scan_large = tk.Button(l_ctrl_frame, text="Scan for Large Files", command=self.toggle_large_scan, bg="#3B8ED0", fg="white", font=("Segoe UI", 10, "bold"), bd=0, cursor="hand2", padx=16, pady=6)
         self.btn_scan_large.pack(side="left")
         
-        self.lbl_large_status = ctk.CTkLabel(l_ctrl_frame, text="Ready", text_color="gray")
-        self.lbl_large_status.pack(side="left", padx=20)
+        self.lbl_large_status = tk.Label(l_ctrl_frame, text="Ready", fg="#888888", bg="#222222", font=("Segoe UI", 9))
+        self.lbl_large_status.pack(side="left", padx=15)
 
-        # Results
-        self.large_results_frame = ctk.CTkScrollableFrame(large_container, height=250, label_text="Files > 100MB")
-        self.large_results_frame.pack(fill="x", padx=20, pady=10)
+        # Results Container
+        self.large_results_outer = tk.Frame(large_container, bg="#1c1c1c", bd=1, relief="solid")
+        self.large_results_outer.pack(fill="x", padx=20, pady=(5, 20))
+        tk.Label(self.large_results_outer, text=" Files > 100MB ", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
+
+        self.large_results_list = tk.Frame(self.large_results_outer, bg="#1c1c1c")
+        self.large_results_list.pack(fill="x", padx=5, pady=5)
+
+    def _on_mousewheel(self, event):
+        try:
+            if self.winfo_exists():
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        except Exception:
+            pass
+
+    def clear_container(self, frame):
+        for widget in frame.winfo_children():
+            widget.destroy()
 
     # ===========================
     # Helpers
@@ -85,8 +163,12 @@ class ScannerModule:
 
     def open_file_location(self, filepath):
         try:
-            filepath = os.path.normpath(filepath)
-            subprocess.Popen(f'explorer /select,"{filepath}"')
+            norm_path = os.path.normpath(filepath)
+            if os.path.exists(norm_path):
+                # Using /select ensures Windows Explorer opens and highlights the target file
+                subprocess.run(f'explorer.exe /select, "{norm_path}"', shell=True)
+            else:
+                messagebox.showerror("Error", f"File not found:\n{norm_path}")
         except Exception as e:
             print(f"Error opening location: {e}")
 
@@ -96,28 +178,27 @@ class ScannerModule:
     def toggle_dup_scan(self):
         if self.scan_running:
             self.scan_running = False
-            self.btn_scan_dup.configure(text="Stopping...", state="disabled")
+            self.btn_scan_dup.config(text="Stopping...", state="disabled")
         else:
             self.start_duplicate_scan()
 
     def start_duplicate_scan(self):
         scan_path = self.dup_path_entry.get()
-        if not scan_path or not os.path.isdir(scan_path):
+        if not scan_path or scan_path == "Select folder to scan..." or not os.path.isdir(scan_path):
             messagebox.showerror("Error", "Invalid directory path.")
             return
         
         ext_filter = self.ext_entry.get().strip()
-        if ext_filter:
+        if ext_filter and ext_filter != "e.g. .mp4, jpg, .pdf":
             extensions = [f".{e.strip().lstrip('.')}" for e in ext_filter.split(',')]
         else:
             extensions = None
         
         self.scan_running = True
-        self.btn_scan_dup.configure(text="Stop Scan", fg_color="#c42b1c", hover_color="#8a1c11")
-        self.lbl_dup_status.configure(text="Initializing...", text_color="gray")
+        self.btn_scan_dup.config(text="Stop Scan", bg="#c42b1c", fg="white")
+        self.lbl_dup_status.config(text="Initializing...", fg="gray")
         
-        for widget in self.dup_results_frame.winfo_children():
-            widget.destroy()
+        self.clear_container(self.dup_results_list)
 
         threading.Thread(target=self.scan_duplicates_thread, args=(scan_path, extensions), daemon=True).start()
 
@@ -126,7 +207,7 @@ class ScannerModule:
         duplicates = []
         scanned_count = 0
         
-        self.frame.after(0, lambda: self.lbl_dup_status.configure(text="Scanning file system..."))
+        self.after(0, lambda: self.lbl_dup_status.config(text="Scanning file system..."))
         
         for root, _, files in os.walk(scan_path):
             if not self.scan_running: break
@@ -150,12 +231,12 @@ class ScannerModule:
                     scanned_count += 1
                     
                     if scanned_count % 200 == 0:
-                        self.frame.after(0, lambda c=scanned_count: self.lbl_dup_status.configure(text=f"Scanned: {c} files"))
+                        self.after(0, lambda c=scanned_count: self.lbl_dup_status.config(text=f"Scanned: {c} files"))
                         
                 except OSError:
                     continue
 
-        self.frame.after(0, lambda: self.lbl_dup_status.configure(text="Processing duplicates..."))
+        self.after(0, lambda: self.lbl_dup_status.config(text="Processing duplicates..."))
         
         for key, paths in files_by_name_size.items():
             if not self.scan_running: break
@@ -173,45 +254,49 @@ class ScannerModule:
         self.scan_running = False
         
         def _update_ui():
-            self.btn_scan_dup.configure(text="Scan for Duplicates", fg_color=["#3B8ED0", "#1F6AA5"], state="normal")
-            self.lbl_dup_status.configure(text=msg)
+            self.btn_scan_dup.config(text="Scan for Duplicates", bg="#3B8ED0", fg="white", state="normal")
+            self.lbl_dup_status.config(text=msg)
             
             if not duplicates: return
 
             duplicates.sort(key=lambda x: x[2], reverse=True)
             display_limit = 100
             
+            self.clear_container(self.dup_results_list)
+
             if len(duplicates) > display_limit:
-                 ctk.CTkLabel(self.dup_results_frame, 
-                              text=f"Showing largest {display_limit} of {len(duplicates)} results...", 
-                              text_color="#FFA500", font=ctk.CTkFont(weight="bold")).pack(pady=5)
+                 tk.Label(
+                     self.dup_results_list, text=f"Showing largest {display_limit} of {len(duplicates)} results...", 
+                     fg="#FFA500", bg="#1c1c1c", font=("Segoe UI", 9, "bold")
+                 ).pack(pady=8, padx=10, anchor="w")
 
             for i, (dup_file, original_file, size) in enumerate(duplicates):
                 if i >= display_limit: break
                 
-                row = ctk.CTkFrame(self.dup_results_frame)
-                row.pack(fill="x", pady=2)
-                
-                info_frame = ctk.CTkFrame(row, fg_color="transparent")
-                info_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-                
-                top_line = ctk.CTkFrame(info_frame, fg_color="transparent")
-                top_line.pack(fill="x")
-                ctk.CTkLabel(top_line, text=os.path.basename(dup_file), font=ctk.CTkFont(weight="bold")).pack(side="left")
-                ctk.CTkLabel(top_line, text=f"({format_size(size)})", font=ctk.CTkFont(size=12, weight="bold"), text_color="#1F6AA5").pack(side="left", padx=10)
+                row = tk.Frame(self.dup_results_list, bg="#2a2a2a", bd=1, relief="solid")
+                row.pack(fill="x", pady=4, padx=5)
+                row.grid_columnconfigure(0, weight=1)
+                row.grid_columnconfigure(1, weight=0)
 
-                ctk.CTkLabel(info_frame, text=f"Duplicate: {dup_file}", font=ctk.CTkFont(size=10), text_color="gray").pack(anchor="w")
-                ctk.CTkLabel(info_frame, text=f"Original:  {original_file}", font=ctk.CTkFont(size=10), text_color="gray").pack(anchor="w")
+                info_frame = tk.Frame(row, bg="#2a2a2a")
+                info_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
                 
-                btn_frame = ctk.CTkFrame(row, fg_color="transparent")
-                btn_frame.pack(side="right", padx=5)
+                top_line = tk.Frame(info_frame, bg="#2a2a2a")
+                top_line.pack(fill="x", pady=(0, 2))
                 
-                ctk.CTkButton(btn_frame, text="Open Duplicate", width=100, height=24,
-                              command=lambda p=dup_file: self.open_file_location(p)).pack(pady=2)
-                ctk.CTkButton(btn_frame, text="Open Original", width=100, height=24, fg_color="gray",
-                              command=lambda p=original_file: self.open_file_location(p)).pack(pady=2)
+                tk.Label(top_line, text=os.path.basename(dup_file), font=("Segoe UI", 10, "bold"), fg="#ffffff", bg="#2a2a2a").pack(side="left")
+                tk.Label(top_line, text=f"({format_size(size)})", font=("Segoe UI", 10, "bold"), fg="#3B8ED0", bg="#2a2a2a").pack(side="left", padx=10)
 
-        self.frame.after(0, _update_ui)
+                tk.Label(info_frame, text=f"Duplicate: {dup_file}", font=("Segoe UI", 9), fg="#cccccc", bg="#2a2a2a", anchor="w").pack(anchor="w", fill="x")
+                tk.Label(info_frame, text=f"Original:  {original_file}", font=("Segoe UI", 9), fg="#888888", bg="#2a2a2a", anchor="w").pack(anchor="w", fill="x")
+                
+                btn_frame = tk.Frame(row, bg="#2a2a2a")
+                btn_frame.grid(row=0, column=1, sticky="e", padx=12, pady=8)
+                
+                tk.Button(btn_frame, text="Open Duplicate", width=14, bg="#383838", fg="white", font=("Segoe UI", 8, "bold"), bd=0, cursor="hand2", padx=5, pady=4, command=lambda p=dup_file: self.open_file_location(p)).pack(pady=3)
+                tk.Button(btn_frame, text="Open Original", width=14, bg="#444444", fg="white", font=("Segoe UI", 8, "bold"), bd=0, cursor="hand2", padx=5, pady=4, command=lambda p=original_file: self.open_file_location(p)).pack(pady=3)
+
+        self.after(0, _update_ui)
 
     # ===========================
     # Large File Logic
@@ -219,22 +304,21 @@ class ScannerModule:
     def toggle_large_scan(self):
         if self.scan_running:
             self.scan_running = False
-            self.btn_scan_large.configure(text="Stopping...", state="disabled")
+            self.btn_scan_large.config(text="Stopping...", state="disabled")
         else:
             self.start_large_scan()
 
     def start_large_scan(self):
         scan_path = self.large_path_entry.get()
-        if not scan_path or not os.path.isdir(scan_path):
+        if not scan_path or scan_path == "Select folder to scan..." or not os.path.isdir(scan_path):
             messagebox.showerror("Error", "Invalid directory path.")
             return
             
         self.scan_running = True
-        self.btn_scan_large.configure(text="Stop Scan", fg_color="#c42b1c", hover_color="#8a1c11")
-        self.lbl_large_status.configure(text="Scanning...", text_color="gray")
+        self.btn_scan_large.config(text="Stop Scan", bg="#c42b1c", fg="white")
+        self.lbl_large_status.config(text="Scanning...", fg="gray")
         
-        for widget in self.large_results_frame.winfo_children():
-            widget.destroy()
+        self.clear_container(self.large_results_list)
             
         threading.Thread(target=self.scan_large_files_thread, args=(scan_path,), daemon=True).start()
 
@@ -260,7 +344,7 @@ class ScannerModule:
                     continue
                 
                 if scanned_count % 200 == 0:
-                     self.frame.after(0, lambda c=scanned_count: self.lbl_large_status.configure(text=f"Scanned: {c} files"))
+                     self.after(0, lambda c=scanned_count: self.lbl_large_status.config(text=f"Scanned: {c} files"))
             
         status_msg = "Scan stopped." if not self.scan_running else f"Done. Found {len(large_files)} large files."
         self.finish_large_scan(large_files, status_msg)
@@ -269,34 +353,47 @@ class ScannerModule:
         self.scan_running = False
         
         def _update_ui():
-            self.btn_scan_large.configure(text="Scan for Large Files", fg_color=["#3B8ED0", "#1F6AA5"], state="normal")
-            self.lbl_large_status.configure(text=msg)
+            self.btn_scan_large.config(text="Scan for Large Files", bg="#3B8ED0", fg="white", state="normal")
+            self.lbl_large_status.config(text=msg)
             
             if not large_files: return
              
             large_files.sort(key=lambda x: x[1], reverse=True)
+            self.clear_container(self.large_results_list)
             
             display_limit = 100
             if len(large_files) > display_limit:
-                 ctk.CTkLabel(self.large_results_frame, 
-                              text=f"Showing largest {display_limit} of {len(large_files)} results...", 
-                              text_color="#FFA500", font=ctk.CTkFont(weight="bold")).pack(pady=5)
+                 tk.Label(
+                     self.large_results_list, text=f"Showing largest {display_limit} of {len(large_files)} results...", 
+                     fg="#FFA500", bg="#1c1c1c", font=("Segoe UI", 9, "bold")
+                 ).pack(pady=8, padx=10, anchor="w")
             
             for i, (fpath, size) in enumerate(large_files):
                 if i >= display_limit: break
                 
-                row = ctk.CTkFrame(self.large_results_frame, fg_color="transparent")
-                row.pack(fill="x", pady=2)
-                
-                size_lbl = ctk.CTkLabel(row, text=format_size(size), width=90, anchor="e", 
-                                      font=ctk.CTkFont(weight="bold"), text_color="#1F6AA5")
-                size_lbl.pack(side="left", padx=5)
-                
-                name_lbl = ctk.CTkLabel(row, text=fpath, anchor="w", wraplength=550)
-                name_lbl.pack(side="left", padx=5, fill="x", expand=True)
+                row = tk.Frame(self.large_results_list, bg="#2a2a2a", bd=1, relief="solid")
+                row.pack(fill="x", pady=4, padx=5)
+                row.grid_columnconfigure(0, weight=0)
+                row.grid_columnconfigure(1, weight=1)
+                row.grid_columnconfigure(2, weight=0)
 
-                btn = ctk.CTkButton(row, text="Open Location", width=100, height=24, 
-                                    command=lambda p=fpath: self.open_file_location(p))
-                btn.pack(side="right", padx=5)
+                size_lbl = tk.Label(
+                    row, text=format_size(size), width=12, anchor="e", 
+                    font=("Segoe UI", 10, "bold"), fg="#3B8ED0", bg="#2a2a2a"
+                )
+                size_lbl.grid(row=0, column=0, padx=12, pady=10, sticky="w")
+                
+                name_lbl = tk.Label(row, text=fpath, anchor="w", fg="#ffffff", bg="#2a2a2a", font=("Segoe UI", 9))
+                name_lbl.grid(row=0, column=1, padx=5, sticky="ew")
 
-        self.frame.after(0, _update_ui)
+                btn = tk.Button(
+                    row, text="Open Location", width=14, height=1, 
+                    bg="#383838", fg="white", font=("Segoe UI", 8, "bold"), bd=0, cursor="hand2", padx=5, pady=4,
+                    command=lambda p=fpath: self.open_file_location(p)
+                )
+                btn.grid(row=0, column=2, padx=12, pady=8, sticky="e")
+
+        self.after(0, _update_ui)
+
+# Compatibility alias for main.py dynamic routing
+FileScannerTab = ScannerModule
