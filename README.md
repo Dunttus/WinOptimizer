@@ -105,6 +105,14 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 </ul>
 </details>
 
+<details>
+<summary><b>12. Power Settings</b></summary>
+<br>
+<ul>
+  <li><b>Power Management:</b> Switch active power plans, configure screen-off and sleep timeouts for battery and AC power, and generate HTML battery health reports.</li>
+</ul>
+</details>
+
 ---
 
 ## ⚙️ Installation
