@@ -18,14 +18,15 @@ NAV_ITEMS = [
     ("Process Priority", "process_priority"),
     ("Network Tools", "network_tools"),
     ("Windows Repair", "repair"),
+    ("Power Settings", "power"),
 ]
 
 
 class MainWindow(tk.Tk):
-    """Main Application Container for WinOptimize 11 - Wibe Suite."""
+    """Main Application Container for Windows toolkit - Wibe Suite."""
     def __init__(self):
         super().__init__()
-        self.title("WinOptimize 11 - Wibe Suite")
+        self.title("Windows toolkit - Wibe Suite")
         self.geometry("1180x760")
         self.minsize(980, 660)
         self.configure(bg="#1c1c1c")

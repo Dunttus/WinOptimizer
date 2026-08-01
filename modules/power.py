@@ -1,21 +1,23 @@
-import customtkinter as ctk
+import os
+import webbrowser
 import subprocess
 import threading
 import re
+import customtkinter as ctk
 from tkinter import messagebox
 
-class PowerModule:
-    def __init__(self, parent):
-        self.frame = ctk.CTkFrame(parent, fg_color="transparent")
-        self.frame.pack(fill="both", expand=True)
+class PowerModule(ctk.CTkFrame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, fg_color="#1c1c1c", *args, **kwargs)
+        self.pack(fill="both", expand=True)
         
         # --- Header ---
-        header_frame = ctk.CTkFrame(self.frame, corner_radius=10, fg_color="#1f538d")
-        header_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(header_frame, text="Power Management", font=("Arial", 18, "bold"), text_color="white").pack(pady=5)
-        ctk.CTkLabel(header_frame, text="Optimize performance or extend battery life.", text_color="gray90").pack(pady=(0, 10))
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=(20, 10))
+        ctk.CTkLabel(header_frame, text="Power Management", font=("Segoe UI", 18, "bold"), text_color="#ffffff").pack(anchor="w")
+        ctk.CTkLabel(header_frame, text="Optimize performance, manage timeouts, and view battery diagnostics.", font=("Segoe UI", 10), text_color="#888888").pack(anchor="w")
 
-        self.scroll = ctk.CTkScrollableFrame(self.frame, fg_color="transparent")
+        self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scroll.pack(fill="both", expand=True, padx=10, pady=5)
 
         # Time Mapping (Label -> Minutes)
@@ -32,31 +34,32 @@ class PowerModule:
         # --- SECTIONS ---
         self._create_plans_ui()
         self._create_timeouts_ui()
+        self._create_battery_report_ui()
         
         # Auto-detect current settings on load
         self.fetch_current_timeouts()
 
     def _create_plans_ui(self):
-        section = ctk.CTkFrame(self.scroll, fg_color="#2b2b2b", corner_radius=10)
+        section = ctk.CTkFrame(self.scroll, fg_color="#222222", corner_radius=8)
         section.pack(fill="x", padx=10, pady=10)
         
-        ctk.CTkLabel(section, text="ACTIVE POWER PLAN", font=("Arial", 12, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=15, pady=(15, 10))
+        ctk.CTkLabel(section, text="ACTIVE POWER PLAN", font=("Segoe UI", 12, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=15, pady=(15, 10))
         
         self.plans_container = ctk.CTkFrame(section, fg_color="transparent")
-        self.plans_container.pack(fill="x", padx=10, pady=5)
+        self.plans_container.pack(fill="x", padx=15, pady=5)
         
         # Refresh Button
-        ctk.CTkButton(section, text="Refresh Plans", height=30, fg_color="#333333", 
-                      command=self.load_power_plans).pack(pady=15)
+        ctk.CTkButton(section, text="Refresh Plans", height=30, fg_color="#333333", hover_color="#444444",
+                      command=self.load_power_plans).pack(anchor="w", padx=15, pady=15)
 
         self.load_power_plans()
 
     def _create_timeouts_ui(self):
-        section = ctk.CTkFrame(self.scroll, fg_color="#2b2b2b", corner_radius=10)
+        section = ctk.CTkFrame(self.scroll, fg_color="#222222", corner_radius=8)
         section.pack(fill="x", padx=10, pady=10)
         
-        ctk.CTkLabel(section, text="TIMEOUT SETTINGS", font=("Arial", 12, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=15, pady=(15, 5))
-        ctk.CTkLabel(section, text="Select duration before turning off screen or sleeping.", text_color="gray").pack(anchor="w", padx=15)
+        ctk.CTkLabel(section, text="TIMEOUT SETTINGS", font=("Segoe UI", 12, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=15, pady=(15, 5))
+        ctk.CTkLabel(section, text="Select duration before turning off screen or sleeping.", font=("Segoe UI", 10), text_color="#888888").pack(anchor="w", padx=15)
 
         # Grid for controls
         grid = ctk.CTkFrame(section, fg_color="transparent")
@@ -64,34 +67,44 @@ class PowerModule:
         grid.grid_columnconfigure((0, 1), weight=1)
 
         # --- Headers ---
-        ctk.CTkLabel(grid, text="ON BATTERY", font=("Arial", 11, "bold"), text_color="#FFA726").grid(row=0, column=0, pady=10)
-        ctk.CTkLabel(grid, text="PLUGGED IN", font=("Arial", 11, "bold"), text_color="#00E676").grid(row=0, column=1, pady=10)
+        ctk.CTkLabel(grid, text="ON BATTERY", font=("Segoe UI", 11, "bold"), text_color="#FFA726").grid(row=0, column=0, pady=10)
+        ctk.CTkLabel(grid, text="PLUGGED IN", font=("Segoe UI", 11, "bold"), text_color="#00E676").grid(row=0, column=1, pady=10)
 
         # --- Screen Off ---
-        ctk.CTkLabel(grid, text="Turn off screen after:", text_color="gray").grid(row=1, column=0, columnspan=2, pady=(10, 0))
+        ctk.CTkLabel(grid, text="Turn off screen after:", font=("Segoe UI", 10), text_color="#888888").grid(row=1, column=0, columnspan=2, pady=(10, 0))
         
-        self.screen_dc = ctk.CTkComboBox(grid, values=self.time_labels)
+        self.screen_dc = ctk.CTkComboBox(grid, values=self.time_labels, fg_color="#111111", border_color="#333333", button_color="#3B8ED0")
         self.screen_dc.set("...") 
-        self.screen_dc.grid(row=2, column=0, padx=10, pady=5)
+        self.screen_dc.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
 
-        self.screen_ac = ctk.CTkComboBox(grid, values=self.time_labels)
+        self.screen_ac = ctk.CTkComboBox(grid, values=self.time_labels, fg_color="#111111", border_color="#333333", button_color="#3B8ED0")
         self.screen_ac.set("...") 
-        self.screen_ac.grid(row=2, column=1, padx=10, pady=5)
+        self.screen_ac.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
 
         # --- Sleep ---
-        ctk.CTkLabel(grid, text="Put computer to sleep after:", text_color="gray").grid(row=3, column=0, columnspan=2, pady=(15, 0))
+        ctk.CTkLabel(grid, text="Put computer to sleep after:", font=("Segoe UI", 10), text_color="#888888").grid(row=3, column=0, columnspan=2, pady=(15, 0))
         
-        self.sleep_dc = ctk.CTkComboBox(grid, values=self.time_labels)
+        self.sleep_dc = ctk.CTkComboBox(grid, values=self.time_labels, fg_color="#111111", border_color="#333333", button_color="#3B8ED0")
         self.sleep_dc.set("...")
-        self.sleep_dc.grid(row=4, column=0, padx=10, pady=5)
+        self.sleep_dc.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
 
-        self.sleep_ac = ctk.CTkComboBox(grid, values=self.time_labels)
+        self.sleep_ac = ctk.CTkComboBox(grid, values=self.time_labels, fg_color="#111111", border_color="#333333", button_color="#3B8ED0")
         self.sleep_ac.set("...")
-        self.sleep_ac.grid(row=4, column=1, padx=10, pady=5)
+        self.sleep_ac.grid(row=4, column=1, padx=10, pady=5, sticky="ew")
 
         # Apply Button
-        ctk.CTkButton(section, text="Apply Timeouts", height=35, fg_color="#1f538d",
-                      command=self.apply_timeouts).pack(pady=20)
+        ctk.CTkButton(section, text="Apply Timeouts", height=35, fg_color="#3B8ED0", hover_color="#2b7ab0",
+                      command=self.apply_timeouts).pack(anchor="w", padx=15, pady=20)
+
+    def _create_battery_report_ui(self):
+        section = ctk.CTkFrame(self.scroll, fg_color="#222222", corner_radius=8)
+        section.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(section, text="BATTERY HEALTH REPORT", font=("Segoe UI", 12, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=15, pady=(15, 5))
+        ctk.CTkLabel(section, text="Generate an official Windows HTML battery health, capacity, and usage report.", font=("Segoe UI", 10), text_color="#888888").pack(anchor="w", padx=15)
+
+        ctk.CTkButton(section, text="Generate & Open Battery Report", height=35, fg_color="#3B8ED0", hover_color="#2b7ab0",
+                      command=self.generate_battery_report).pack(anchor="w", padx=15, pady=15)
 
     # --- Logic: Power Plans ---
     def load_power_plans(self):
@@ -99,7 +112,6 @@ class PowerModule:
             widget.destroy()
 
         try:
-            # Fetch plans
             output = subprocess.check_output("powercfg /list", text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             
             active_guid = None
@@ -117,14 +129,15 @@ class PowerModule:
 
             for name, guid, active in plans:
                 row = ctk.CTkFrame(self.plans_container, fg_color="transparent")
-                row.pack(fill="x", pady=2)
+                row.pack(fill="x", pady=4)
                 
                 rb = ctk.CTkRadioButton(row, text=f"{name}", variable=self.radio_var, value=guid,
-                                        command=lambda g=guid: self.set_active_plan(g))
+                                      command=lambda g=guid: self.set_active_plan(g),
+                                      font=("Segoe UI", 10), text_color="#ffffff", fg_color="#3B8ED0")
                 rb.pack(side="left")
                 
                 if active:
-                    ctk.CTkLabel(row, text="(Active)", text_color="#00E676", font=("Arial", 10, "bold")).pack(side="left", padx=10)
+                    ctk.CTkLabel(row, text="(Active)", text_color="#00E676", font=("Segoe UI", 10, "bold")).pack(side="left", padx=10)
 
         except Exception as e:
             ctk.CTkLabel(self.plans_container, text=f"Error loading plans: {e}", text_color="red").pack()
@@ -133,8 +146,8 @@ class PowerModule:
         def _task():
             try:
                 subprocess.run(f"powercfg /setactive {guid}", shell=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                self.frame.after(0, self.load_power_plans) # Refresh UI to update "(Active)" label
-                self.frame.after(0, self.fetch_current_timeouts) # Refresh timeouts as they might change with plan
+                self.after(0, self.load_power_plans)
+                self.after(0, self.fetch_current_timeouts)
             except Exception as e:
                 print(f"Plan Error: {e}")
         threading.Thread(target=_task, daemon=True).start()
@@ -143,56 +156,12 @@ class PowerModule:
     def fetch_current_timeouts(self):
         def _task():
             try:
-                # We need to query specific aliases for Monitor (monitor-timeout-ac/dc) and Sleep (standby-timeout-ac/dc)
-                # Note: 'powercfg /q' returns hex seconds. 'powercfg /aliases' helps identify them, but direct query is easier.
-                
-                def get_val(alias, ac_dc):
-                    # Alias: SUB_VIDEO VIDEOIDLE, SUB_SLEEP STANDBYIDLE
-                    # Simpler method: Use the /Q command and parse the current value in decimal seconds
-                    cmd = f"powercfg /query SCHEME_CURRENT {alias} {ac_dc}"
-                    out = subprocess.check_output(cmd, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-                    
-                    # Look for "Current AC Power Setting Index: 0x000003c" or similar
-                    match = re.search(r"Current.*Index:\s+(0x[0-9a-fA-F]+)", out)
-                    if match:
-                        seconds = int(match.group(1), 16)
-                        return int(seconds / 60) # Return minutes
-                    return 0
-
-                # 1. Monitor (VIDEOIDLE)
-                # GUIDs for standard settings (subgroup VIDEO, setting VIDEOIDLE)
-                # We use aliases for simplicity: monitor-timeout-ac
-                
-                # Fetching via direct alias reading isn't standard output, so we check aliases first
-                # Actually, simplest way is parsing 'powercfg /getactivescheme' then querying specific GUIDs
-                # Monitor GUID: 3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e
-                # Sleep GUID: 238c9fa8-0aad-41ed-83f4-97be242c8f20
-                
-                # Helper to convert mins to label
-                def get_label(mins):
-                    if mins == 0: return "Never"
-                    # Find closest match
-                    closest = min(self.reverse_time_map.keys(), key=lambda x: abs(x - mins))
-                    return self.reverse_time_map.get(closest, "Custom")
-
-                # Parse AC/DC for Screen (Subgroup VIDEO -> VIDEOIDLE)
-                # We use powershell for cleaner object return if possible, but regex on powercfg is standard for Python
-                
-                # VIDEO SUBGROUP
                 vid_guid = "7516b95f-f776-4464-8c53-06167f40cc99"
                 vid_idle = "3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e"
                 
-                # SLEEP SUBGROUP
                 sleep_guid = "238c9fa8-0aad-41ed-83f4-97be242c8f20"
                 sleep_idle = "29f6c1db-86da-48c5-9fdb-f2b67b1f44da"
 
-                # Get Values
-                # Screen AC
-                scr_ac_mins = get_val(vid_guid, vid_idle) # This likely fails without correct command structure
-                # REVISION: The standard command 'powercfg /q SCHEME_CURRENT SUB_VIDEO VIDEOIDLE' works
-                
-                # Run queries
-                # Screen
                 out_scr = subprocess.check_output(f"powercfg /q SCHEME_CURRENT {vid_guid} {vid_idle}", text=True, creationflags=subprocess.CREATE_NO_WINDOW)
                 ac_hex = re.search(r"Current AC Power Setting Index:\s+(0x[0-9a-fA-F]+)", out_scr)
                 dc_hex = re.search(r"Current DC Power Setting Index:\s+(0x[0-9a-fA-F]+)", out_scr)
@@ -200,7 +169,6 @@ class PowerModule:
                 scr_ac = int(int(ac_hex.group(1), 16) / 60) if ac_hex else 10
                 scr_dc = int(int(dc_hex.group(1), 16) / 60) if dc_hex else 5
 
-                # Sleep
                 out_slp = subprocess.check_output(f"powercfg /q SCHEME_CURRENT {sleep_guid} {sleep_idle}", text=True, creationflags=subprocess.CREATE_NO_WINDOW)
                 ac_hex_s = re.search(r"Current AC Power Setting Index:\s+(0x[0-9a-fA-F]+)", out_slp)
                 dc_hex_s = re.search(r"Current DC Power Setting Index:\s+(0x[0-9a-fA-F]+)", out_slp)
@@ -208,8 +176,7 @@ class PowerModule:
                 slp_ac = int(int(ac_hex_s.group(1), 16) / 60) if ac_hex_s else 30
                 slp_dc = int(int(dc_hex_s.group(1), 16) / 60) if dc_hex_s else 15
 
-                # Update UI
-                self.frame.after(0, lambda: self._update_combos(scr_ac, scr_dc, slp_ac, slp_dc))
+                self.after(0, lambda: self._update_combos(scr_ac, scr_dc, slp_ac, slp_dc))
 
             except Exception as e:
                 print(f"Fetch Timeouts Error: {e}")
@@ -220,7 +187,7 @@ class PowerModule:
         def get_lbl(m):
             if m == 0: return "Never"
             if m in self.reverse_time_map: return self.reverse_time_map[m]
-            return f"{m} Minutes" # Custom
+            return f"{m} Minutes"
 
         self.screen_ac.set(get_lbl(s_ac))
         self.screen_dc.set(get_lbl(s_dc))
@@ -230,9 +197,8 @@ class PowerModule:
     def apply_timeouts(self):
         def _task():
             try:
-                # Map selections to minutes
                 def get_mins(val):
-                    return self.time_map.get(val, 10) # Default safe fallback
+                    return self.time_map.get(val, 10)
 
                 m_screen_ac = get_mins(self.screen_ac.get())
                 m_screen_dc = get_mins(self.screen_dc.get())
@@ -249,8 +215,33 @@ class PowerModule:
                 for cmd in cmds:
                     subprocess.run(cmd, shell=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
-                self.frame.after(0, lambda: messagebox.showinfo("Success", "Power timeouts applied successfully."))
+                self.after(0, lambda: messagebox.showinfo("Success", "Power timeouts applied successfully."))
             except Exception as e:
-                self.frame.after(0, lambda: messagebox.showerror("Error", f"Could not apply settings:\n{e}"))
+                self.after(0, lambda: messagebox.showerror("Error", f"Could not apply settings:\n{e}"))
 
         threading.Thread(target=_task, daemon=True).start()
+
+    def generate_battery_report(self):
+        def _task():
+            try:
+                report_path = os.path.join(os.path.expanduser("~"), "battery-report.html")
+                cmd = f'powercfg /batteryreport /output "{report_path}"'
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                
+                if result.returncode == 0 and os.path.exists(report_path):
+                    def _prompt():
+                        if messagebox.askyesno("Battery Report Ready", f"Battery report generated successfully at:\n{report_path}\n\nWould you like to open it in your web browser now?"):
+                            webbrowser.open(report_path)
+                    self.after(0, _prompt)
+                else:
+                    err_msg = result.stderr.strip() if result.stderr else "Unknown error or device has no supported battery."
+                    self.after(0, lambda: messagebox.showerror("Error", f"Failed to generate battery report:\n{err_msg}"))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", f"An error occurred:\n{e}"))
+
+        threading.Thread(target=_task, daemon=True).start()
+
+# Compatibility aliases for main.py dynamic loading
+PowerTab = PowerModule
+Power = PowerModule
+PowerSettingsTab = PowerModule
