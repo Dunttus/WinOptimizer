@@ -2,6 +2,12 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
+
+try:
+    import config
+except ImportError:
+    config = None
 
 # Used to hide console windows during background commands
 CREATE_NO_WINDOW = 0x08000000
@@ -52,21 +58,25 @@ class WingetModule(tk.Frame):
         info_frame = tk.Frame(self, bg="#1c1c1c")
         info_frame.pack(fill="x", padx=20, pady=(20, 10))
         tk.Label(info_frame, text="WinGet Package Manager", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(info_frame, text="Manage software. Toggle between searching the Store and managing Installed Apps.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
+        tk.Label(info_frame, text="Manage software. Toggle between Store search, Installed apps, and configuration presets.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
 
         # --- View Switcher (Tabs) ---
         self.switch_frame = tk.Frame(self, bg="#1c1c1c")
         self.switch_frame.pack(fill="x", padx=20, pady=(0, 15))
 
-        self.btn_store = tk.Button(self.switch_frame, text="Store Search", font=("Segoe UI", 10, "bold"), width=20, bd=0, cursor="hand2", command=lambda: self.toggle_view("Store Search"))
+        self.btn_store = tk.Button(self.switch_frame, text="Store Search", font=("Segoe UI", 10, "bold"), width=18, bd=0, cursor="hand2", command=lambda: self.toggle_view("Store Search"))
         self.btn_store.pack(side="left", padx=(0, 5))
 
-        self.btn_installed = tk.Button(self.switch_frame, text="My Installed Apps", font=("Segoe UI", 10, "bold"), width=20, bd=0, cursor="hand2", command=lambda: self.toggle_view("My Installed Apps"))
-        self.btn_installed.pack(side="left")
+        self.btn_installed = tk.Button(self.switch_frame, text="My Installed Apps", font=("Segoe UI", 10, "bold"), width=18, bd=0, cursor="hand2", command=lambda: self.toggle_view("My Installed Apps"))
+        self.btn_installed.pack(side="left", padx=(0, 5))
+
+        self.btn_preset = tk.Button(self.switch_frame, text="Preset Apps", font=("Segoe UI", 10, "bold"), width=18, bd=0, cursor="hand2", command=lambda: self.toggle_view("Preset Apps"))
+        self.btn_preset.pack(side="left")
 
         # --- Container Frames ---
         self.store_container = tk.Frame(self, bg="#1c1c1c")
         self.installed_container = tk.Frame(self, bg="#1c1c1c")
+        self.preset_container = tk.Frame(self, bg="#1c1c1c")
 
         # --- Shared Console (Bottom) ---
         console_frame = tk.Frame(self, bg="#1c1c1c")
@@ -80,10 +90,12 @@ class WingetModule(tk.Frame):
         # --- Data Caches ---
         self.installed_cache = [] 
         self.is_loading_installed = False
+        self.preset_vars = {}
         
         # --- Build UIs ---
         self.setup_store_ui()
         self.setup_installed_ui()
+        self.setup_preset_ui()
 
         # Start with Store View
         self.toggle_view("Store Search")
@@ -92,18 +104,26 @@ class WingetModule(tk.Frame):
         active_bg, active_fg = "#383838", "#ffffff"
         inactive_bg, inactive_fg = "#262626", "#888888"
 
+        self.btn_store.config(bg=inactive_bg, fg=inactive_fg)
+        self.btn_installed.config(bg=inactive_bg, fg=inactive_fg)
+        self.btn_preset.config(bg=inactive_bg, fg=inactive_fg)
+
+        self.store_container.pack_forget()
+        self.installed_container.pack_forget()
+        self.preset_container.pack_forget()
+
         if value == "Store Search":
             self.btn_store.config(bg=active_bg, fg=active_fg)
-            self.btn_installed.config(bg=inactive_bg, fg=inactive_fg)
-            self.installed_container.pack_forget()
             self.store_container.pack(fill="both", expand=True, padx=20, pady=5)
-        else:
-            self.btn_store.config(bg=inactive_bg, fg=inactive_fg)
+        elif value == "My Installed Apps":
             self.btn_installed.config(bg=active_bg, fg=active_fg)
-            self.store_container.pack_forget()
             self.installed_container.pack(fill="both", expand=True, padx=20, pady=5)
             if not self.installed_cache and not self.is_loading_installed:
                 self.refresh_installed()
+        elif value == "Preset Apps":
+            self.btn_preset.config(bg=active_bg, fg=active_fg)
+            self.preset_container.pack(fill="both", expand=True, padx=20, pady=5)
+            self.refresh_preset_ui()
 
     # =========================================================
     # UI BUILDERS
@@ -154,6 +174,18 @@ class WingetModule(tk.Frame):
         self.installed_results = ScrollableFrame(self.installed_container, bg_color="#1c1c1c")
         self.installed_results.pack(fill="both", expand=True)
         self.configure_grid(self.installed_results.inner_frame)
+
+    def setup_preset_ui(self):
+        tool_area = tk.Frame(self.preset_container, bg="#1c1c1c")
+        tool_area.pack(fill="x", pady=(0, 10))
+        
+        tk.Label(tool_area, text="Batch Install Preset Applications", font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#1c1c1c").pack(anchor="w", pady=(0, 5))
+        tk.Label(tool_area, text="Select the applications defined in config.py that you want to install simultaneously.", font=("Segoe UI", 9), fg="#888888", bg="#1c1c1c").pack(anchor="w", pady=(0, 10))
+
+        tk.Button(tool_area, text="Install Selected Apps", command=self.install_selected_presets, bg="#3B8ED0", fg="white", font=("Segoe UI", 9, "bold"), activebackground="#2873AD", activeforeground="white", bd=0, cursor="hand2", padx=15, pady=6).pack(anchor="w")
+
+        self.preset_results = ScrollableFrame(self.preset_container, bg_color="#1c1c1c")
+        self.preset_results.pack(fill="both", expand=True, pady=(10, 0))
 
     # =========================================================
     # HELPERS
@@ -266,7 +298,6 @@ class WingetModule(tk.Frame):
         
         def _fetch():
             try:
-                # Added encoding='utf-8', errors='ignore' to prevent charmap decode crashes
                 raw = subprocess.check_output("winget list", shell=True, text=True, encoding='utf-8', errors='ignore', creationflags=CREATE_NO_WINDOW)
                 self.installed_cache = self.parse_winget_table(raw)
                 self.after(0, self.finish_loading_installed)
@@ -349,6 +380,63 @@ class WingetModule(tk.Frame):
                 self.log(f"Batch Update Error: {e}")
         threading.Thread(target=_batch_process, daemon=True).start()
 
+    def refresh_preset_ui(self):
+        self.preset_results.clear()
+        inner = self.preset_results.inner_frame
+        self.preset_vars.clear()
+
+        apps = []
+        if config:
+            for attr in ['PRESET_APPS', 'DEFAULT_APPS', 'APPS_TO_INSTALL', 'PRESETS']:
+                if hasattr(config, attr):
+                    apps = getattr(config, attr)
+                    break
+        
+        if not apps:
+            tk.Label(inner, text="No preset apps found in config.py.", fg="gray", bg="#1c1c1c", font=("Segoe UI", 10)).pack(pady=20)
+            return
+
+        for item in apps:
+            app_id = item if isinstance(item, str) else item.get("id", item.get("WingetId", ""))
+            if not app_id:
+                continue
+            var = tk.BooleanVar(value=True)
+            self.preset_vars[app_id] = var
+            cb = tk.Checkbutton(inner, text=app_id, variable=var, font=("Segoe UI", 10), fg="#ffffff", bg="#1c1c1c", selectcolor="#222222", activebackground="#1c1c1c", activeforeground="#ffffff")
+            cb.pack(anchor="w", pady=4, padx=5)
+
+    def install_selected_presets(self):
+        selected_apps = [app_id for app_id, var in self.preset_vars.items() if var.get()]
+        if not selected_apps:
+            self.log("No preset apps selected.")
+            messagebox.showwarning("Preset Apps", "Please select at least one application to install.")
+            return
+        self._execute_preset_installation(selected_apps)
+
+    def _execute_preset_installation(self, apps):
+        self.log(f"Starting installation of {len(apps)} selected preset app(s)...")
+        def _batch_install():
+            for app_id in apps:
+                self.log(f"----------------------------------------")
+                self.log(f"Installing Preset: {app_id}")
+                cmd = [
+                    "winget", "install", "--id", app_id, 
+                    "--silent", "--accept-package-agreements", "--accept-source-agreements"
+                ]
+                try:
+                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                            text=True, encoding='utf-8', errors='ignore', shell=True, creationflags=CREATE_NO_WINDOW)
+                    for line in proc.stdout:
+                        if line.strip(): self.log(line.strip())
+                    proc.wait()
+                except Exception as e:
+                    self.log(f"Failed to install {app_id}: {e}")
+            self.log("----------------------------------------")
+            self.log("Preset apps installation completed.")
+            self.after(1000, self.refresh_installed)
+
+        threading.Thread(target=_batch_install, daemon=True).start()
+
     def fetch_data(self, cmd, action, scroll_frame):
         self.log("Searching Repository...")
         scroll_frame.clear()
@@ -356,7 +444,6 @@ class WingetModule(tk.Frame):
         
         def _run():
             try:
-                # Added encoding='utf-8', errors='ignore' here as well
                 raw = subprocess.check_output(cmd, shell=True, text=True, encoding='utf-8', errors='ignore', stderr=subprocess.STDOUT, creationflags=CREATE_NO_WINDOW)
                 data = self.parse_winget_table(raw)
                 self.after(0, lambda: self.render_rows(data, action, scroll_frame))
@@ -413,3 +500,7 @@ class WingetModule(tk.Frame):
             if "uninstall" in args or "upgrade" in args:
                  self.after(1000, self.refresh_installed)
         threading.Thread(target=_run, daemon=True).start()
+
+# Compatibility alias for main.py dynamic loading
+WingetTab = WingetModule
+Winget = WingetModule

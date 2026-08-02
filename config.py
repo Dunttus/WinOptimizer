@@ -1,5 +1,20 @@
 import os  # Added missing import
 
+# WinGet Preset Apps for Batch Installation
+PRESET_APPS = [
+    "Discord.Discord",
+    "Git.Git",
+    "VideoLAN.VLC",
+    "Valve.Steam",
+    "Microsoft.PowerToys",
+    "Obsidian.Obsidian",
+    "DominikReichl.KeePass",
+    "Mozilla.Firefox",
+    "Google.Chrome",
+    "ExpressVPN.ExpressVPN",
+    "Logitech.GHUB"
+]
+
 # Service Configurations
 DISABLABLE_SERVICES = {
     "SysMain", "DiagTrack", "PcaSvc", 
