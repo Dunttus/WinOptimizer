@@ -1,5 +1,6 @@
 import winreg
 import subprocess
+import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -137,7 +138,7 @@ class TweaksModule(tk.Frame):
                 "path": r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32",
                 "value": "", 
                 "type": winreg.REG_SZ,
-                "on_val": "",     
+                "on_val": "",    
                 "off_val": None, 
                 "is_special": "context_menu"
             },
@@ -220,6 +221,27 @@ class TweaksModule(tk.Frame):
                 "type": winreg.REG_DWORD,
                 "on_val": 0, 
                 "off_val": 1 
+            },
+            {
+                "name": "Disable Snap Without Edge Drag",
+                "desc": "Stops windows from snapping unless dragged completely to the screen edge.",
+                "hive": winreg.HKEY_CURRENT_USER,
+                "path": r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                "value": "DITest",
+                "type": winreg.REG_DWORD,
+                "on_val": 0,
+                "off_val": 1
+            },
+            {
+                "name": "Set Background to Static Solid Black",
+                "desc": "Changes the desktop background to a solid black color (Tasainen väri).",
+                "hive": winreg.HKEY_CURRENT_USER,
+                "path": r"Control Panel\Colors",
+                "value": "Background",
+                "type": winreg.REG_SZ,
+                "on_val": "0 0 0",
+                "off_val": "58 110 165",
+                "is_special": "solid_black"
             }
         ]
 
@@ -251,6 +273,17 @@ class TweaksModule(tk.Frame):
 
     def check_tweak_state(self, tweak):
         try:
+            if tweak.get("is_special") == "solid_black":
+                k1 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Colors", 0, winreg.KEY_READ)
+                bg_val, _ = winreg.QueryValueEx(k1, "Background")
+                winreg.CloseKey(k1)
+                
+                k2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop", 0, winreg.KEY_READ)
+                wp_val, _ = winreg.QueryValueEx(k2, "Wallpaper")
+                winreg.CloseKey(k2)
+                
+                return bg_val == "0 0 0" and wp_val == ""
+
             key = winreg.OpenKey(tweak["hive"], tweak["path"], 0, winreg.KEY_READ)
             
             if tweak.get("is_special") == "context_menu":
@@ -273,6 +306,24 @@ class TweaksModule(tk.Frame):
         target_val = tweak["on_val"] if state else tweak["off_val"]
         
         try:
+            if tweak.get("is_special") == "solid_black":
+                if state:
+                    k1 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Colors")
+                    winreg.SetValueEx(k1, "Background", 0, winreg.REG_SZ, "0 0 0")
+                    winreg.CloseKey(k1)
+                    
+                    k2 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop")
+                    winreg.SetValueEx(k2, "Wallpaper", 0, winreg.REG_SZ, "")
+                    winreg.CloseKey(k2)
+                else:
+                    k1 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Colors")
+                    winreg.SetValueEx(k1, "Background", 0, winreg.REG_SZ, "58 110 165")
+                    winreg.CloseKey(k1)
+                
+                # Force Windows desktop refresh API
+                ctypes.windll.user32.SystemParametersInfoW(20, 0, "", 3)
+                return
+
             if tweak.get("is_special") == "context_menu":
                 if state:
                     key = winreg.CreateKey(tweak["hive"], tweak["path"])
