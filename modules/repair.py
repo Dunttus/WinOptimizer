@@ -1,193 +1,383 @@
-import os
 import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from config import (
+    THEME,
+    BG_MAIN,
+    BG_CARD,
+    BG_INPUT,
+    FG_PRIMARY,
+    FG_SECONDARY,
+    FG_MUTED,
+    BORDER_COLOR,
+    FONT_BODY,
+    FONT_BOLD,
+    FONT_MONO,
+    create_header,
+    create_button,
+)
+
+CREATE_NO_WINDOW = 0x08000000
+
 
 class RepairModule(tk.Frame):
-    """Native Tkinter Windows Repair Tools Module."""
+    """Native Tkinter Windows System File & Disk Repair Module."""
+
     def __init__(self, parent):
-        super().__init__(parent, bg="#1c1c1c")
+        super().__init__(parent, bg=BG_MAIN)
+        self.is_running = False
+        self.action_buttons: list[tuple[tk.Button, str]] = []
 
-        # --- Info Section ---
-        info_frame = tk.Frame(self, bg="#1c1c1c")
-        info_frame.pack(fill="x", padx=20, pady=(20, 10))
-        tk.Label(info_frame, text="Windows Repair Tools", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(info_frame, text="Execute built-in Windows commands to repair system files and disk errors.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
+        self.init_ui()
 
-        # --- Tools List Container ---
-        tools_container = tk.Frame(self, bg="#1c1c1c", bd=1, relief="solid")
-        tools_container.pack(fill="x", padx=20, pady=10)
-        
+    def init_ui(self):
+        # --- Standard Header ---
+        create_header(
+            self,
+            title="Windows Repair Tools",
+            subtitle="Execute built-in Windows servicing utilities (SFC, DISM, CHKDSK) to repair corrupted system files and disk errors.",
+        )
+
+        # --- Tools Card Container ---
+        tools_card = tk.Frame(
+            self,
+            bg=BG_CARD,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+            padx=16,
+            pady=12,
+        )
+        tools_card.pack(fill=tk.X, padx=24, pady=(0, 12))
+
         tk.Label(
-            tools_container, text=" Repair Commands ", fg="#888888", 
-            bg="#1c1c1c", font=("Segoe UI", 9, "bold")
-        ).pack(anchor="w", padx=10, pady=(8, 0))
+            tools_card,
+            text="System Integrity & Disk Maintenance Commands",
+            fg=FG_PRIMARY,
+            bg=BG_CARD,
+            font=FONT_BOLD,
+        ).pack(anchor="w", pady=(0, 8))
 
-        tools_list = tk.Frame(tools_container, bg="#1c1c1c")
-        tools_list.pack(fill="x", padx=5, pady=5)
+        tools_list = tk.Frame(tools_card, bg=BG_CARD)
+        tools_list.pack(fill=tk.X)
 
-        # 1. System File Checker
+        # 1. System File Checker (SFC)
         self.create_tool_row(
             tools_list,
-            "SFC Scan", 
-            "Scans integrity of all protected system files and repairs corrupted files.",
-            self.run_sfc
+            title="SFC Scan",
+            desc="Scans the integrity of all protected Windows system files and replaces corrupted versions (sfc /scannow).",
+            command=self.run_sfc,
+            variant="primary",
         )
 
-        # 2. DISM Scan (Check Health)
+        # 2. DISM ScanHealth
         self.create_tool_row(
             tools_list,
-            "DISM Check", 
-            "Scans the Windows image for corruption (Does not fix, just checks).",
-            self.run_dism_scan
+            title="DISM Check",
+            desc="Scans the Windows component store (WinSxS) for image corruption without modifying files.",
+            command=self.run_dism_scan,
+            variant="primary",
         )
 
-        # 3. DISM Restore (Restore Health)
+        # 3. DISM RestoreHealth
         self.create_tool_row(
             tools_list,
-            "DISM Repair", 
-            "Downloads fresh files from Windows Update to fix a corrupted Windows image.",
-            self.run_dism_restore
+            title="DISM Repair",
+            desc="Downloads clean replacement components from Windows Update to repair a corrupted system image.",
+            command=self.run_dism_restore,
+            variant="primary",
         )
 
-        # 4. Check Disk - RED
+        # 4. Check Disk (CHKDSK)
         self.create_tool_row(
             tools_list,
-            "Check Disk (C:)", 
-            "Checks file system metadata and disk errors. Requires a Restart.",
-            self.schedule_chkdsk,
-            color="#c42b1c"
+            title="Check Disk (C:)",
+            desc="Schedules a full file system and sector repair on drive C: for the next system restart.",
+            command=self.schedule_chkdsk,
+            variant="danger",
         )
 
-        # --- Terminal Control Bar ---
-        term_ctrl_frame = tk.Frame(self, bg="#1c1c1c")
-        term_ctrl_frame.pack(fill="x", padx=20, pady=(10, 5))
-        
-        tk.Label(term_ctrl_frame, text="Terminal Output:", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 10, "bold")).pack(side="left")
-        tk.Button(
-            term_ctrl_frame, text="Clear Terminal", width=14, bg="#444444", fg="white", 
-            font=("Segoe UI", 8, "bold"), activebackground="#555555", activeforeground="white", 
-            bd=0, cursor="hand2", padx=5, pady=4, command=self.clear_terminal
-        ).pack(side="right")
+        # --- Terminal Header Bar ---
+        term_ctrl_frame = tk.Frame(self, bg=BG_MAIN)
+        term_ctrl_frame.pack(fill=tk.X, padx=24, pady=(4, 6))
+
+        tk.Label(
+            term_ctrl_frame,
+            text="Terminal Output",
+            fg=FG_PRIMARY,
+            bg=BG_MAIN,
+            font=FONT_BOLD,
+        ).pack(side=tk.LEFT)
+
+        self.status_lbl = tk.Label(
+            term_ctrl_frame,
+            text="Idle",
+            fg=FG_SECONDARY,
+            bg=BG_MAIN,
+            font=FONT_BODY,
+        )
+        self.status_lbl.pack(side=tk.LEFT, padx=(12, 0))
+
+        create_button(
+            term_ctrl_frame,
+            text="Clear Terminal",
+            command=self.clear_terminal,
+            variant="secondary",
+            padx=12,
+            pady=4,
+        ).pack(side=tk.RIGHT)
 
         # --- Terminal Output Window ---
-        term_container = tk.Frame(self, bg="#1c1c1c", bd=1, relief="solid")
-        term_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        term_container = tk.Frame(
+            self,
+            bg=BG_INPUT,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        term_container.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 20))
+
+        term_scrollbar = ttk.Scrollbar(term_container, orient="vertical")
+        term_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.terminal = tk.Text(
-            term_container, font=("Consolas", 10), fg="#00FF00", bg="#111111", 
-            insertbackground="white", bd=0, highlightthickness=0
+            term_container,
+            font=FONT_MONO,
+            fg=THEME["success"],
+            bg=BG_INPUT,
+            insertbackground=FG_PRIMARY,
+            bd=0,
+            padx=14,
+            pady=12,
+            highlightthickness=0,
+            yscrollcommand=term_scrollbar.set,
+            state="disabled",
         )
-        term_scrollbar = ttk.Scrollbar(term_container, orient="vertical", command=self.terminal.yview)
-        self.terminal.configure(yscrollcommand=term_scrollbar.set, state="disabled")
+        self.terminal.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        term_scrollbar.config(command=self.terminal.yview)
 
-        self.terminal.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-        term_scrollbar.pack(side="right", fill="y")
+        self.terminal.tag_config("heading", foreground=THEME["info"], font=(FONT_MONO[0], 10, "bold"))
+        self.terminal.tag_config("cmd", foreground=FG_PRIMARY)
+        self.terminal.tag_config("warn", foreground=THEME["warning"])
+        self.terminal.tag_config("err", foreground=THEME["danger"])
+        self.terminal.tag_config("muted", foreground=FG_SECONDARY)
 
-    def create_tool_row(self, parent, title, desc, command, color=None):
-        row = tk.Frame(parent, bg="#2a2a2a", bd=1, relief="solid")
-        row.pack(fill="x", pady=4, padx=5)
-        row.grid_columnconfigure(0, weight=0)
-        row.grid_columnconfigure(1, weight=1)
-        
-        btn_bg = color if color else "#3B8ED0"
-        btn_active = "#A32014" if color else "#1F6AA5"
-
-        btn = tk.Button(
-            row, text=title, width=16, bg=btn_bg, fg="white", 
-            font=("Segoe UI", 9, "bold"), activebackground=btn_active, 
-            activeforeground="white", bd=0, cursor="hand2", padx=5, pady=4,
-            command=command
+    def create_tool_row(
+        self, parent: tk.Frame, title: str, desc: str, command, variant: str = "primary"
+    ):
+        row = tk.Frame(
+            parent,
+            bg=BG_INPUT,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+            padx=10,
+            pady=8,
         )
-        btn.grid(row=0, column=0, padx=12, pady=8, sticky="w")
-        
-        lbl = tk.Label(row, text=desc, font=("Segoe UI", 9), fg="#cccccc", bg="#2a2a2a", anchor="w")
-        lbl.grid(row=0, column=1, padx=5, pady=8, sticky="ew")
+        row.pack(fill=tk.X, pady=4)
 
-    def log(self, text):
-        """Append text to the terminal window safely from any thread."""
-        def _update():
-            self.terminal.configure(state="normal")
+        btn = create_button(
+            row,
+            text=title,
+            command=command,
+            variant=variant,
+            width=16,
+            pady=5,
+        )
+        btn.pack(side=tk.LEFT, padx=(0, 14))
+        self.action_buttons.append((btn, variant))
+
+        tk.Label(
+            row,
+            text=desc,
+            font=FONT_BODY,
+            fg=FG_SECONDARY,
+            bg=BG_INPUT,
+            anchor="w",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    # --------------------------------------------------------------------------
+    # Thread-Safe Logging & Button Lock
+    # --------------------------------------------------------------------------
+    def log(self, text: str, tag: str = ""):
+        """Appends text to the terminal window safely from any thread."""
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, self.log, text, tag)
+            return
+
+        self.terminal.configure(state="normal")
+        if tag:
+            self.terminal.insert("end", text + "\n", tag)
+        else:
             self.terminal.insert("end", text + "\n")
-            self.terminal.see("end")
-            self.terminal.configure(state="disabled")
-        self.after(0, _update)
+        self.terminal.see("end")
+        self.terminal.configure(state="disabled")
 
     def clear_terminal(self):
         self.terminal.configure(state="normal")
         self.terminal.delete("1.0", "end")
         self.terminal.configure(state="disabled")
 
-    def run_process_stream(self, command, title):
-        """Generic helper to run commands and stream output."""
-        def _target():
-            self.log(f"\n--- Starting {title} ---")
-            self.log(f"> {command}")
-            self.log("Please wait...\n")
-            
+    def _set_busy(self, busy: bool, status_text: str = "Idle"):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, self._set_busy, busy, status_text)
+            return
+
+        self.is_running = busy
+        self.status_lbl.configure(
+            text=status_text,
+            fg=THEME["info"] if busy else FG_SECONDARY,
+        )
+        palette = {
+            "primary": (THEME["accent"], "#ffffff"),
+            "danger": (THEME["danger"], "#ffffff"),
+            "secondary": (THEME["bg_card_hover"], FG_PRIMARY),
+        }
+        for btn, variant in self.action_buttons:
+            if busy:
+                btn.configure(state="disabled", bg=BG_CARD, fg=FG_MUTED)
+            else:
+                bg_col, fg_col = palette.get(variant, palette["primary"])
+                btn.configure(state="normal", bg=bg_col, fg=fg_col)
+
+    # --------------------------------------------------------------------------
+    # Subprocess Streaming Engine
+    # --------------------------------------------------------------------------
+    def run_process_stream(self, cmd_args: list[str], title: str):
+        """Streams command output line-by-line while stripping UTF-16 null bytes."""
+        if self.is_running:
+            return
+
+        self._set_busy(True, f"Running {title}...")
+
+        def _worker():
+            cmd_str = " ".join(cmd_args)
+            self.log(f"\n=== Starting {title} ===", "heading")
+            self.log(f"> {cmd_str}", "cmd")
+            self.log("Operation in progress. This may take several minutes...\n", "muted")
+
             try:
                 process = subprocess.Popen(
-                    command, 
-                    shell=True, 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.PIPE, 
-                    text=True, 
-                    bufsize=1, 
-                    universal_newlines=True,
-                    creationflags=0x08000000  # Suppress command prompt flash
+                    cmd_args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                    creationflags=CREATE_NO_WINDOW,
                 )
-                
-                for line in process.stdout:
-                    self.log(line.rstrip())
-                
+
+                if process.stdout:
+                    for raw_line in process.stdout:
+                        # Clean UTF-16LE null bytes emitted by Windows sfc.exe
+                        clean_line = raw_line.replace("\x00", "").strip()
+                        if clean_line:
+                            self.log(clean_line)
+
                 process.wait()
-                
+
                 if process.returncode == 0:
-                    self.log(f"\n--- {title} Completed Successfully ---")
+                    self.log(f"\n=== {title} Completed Successfully ===", "heading")
                 else:
-                    self.log(f"\n--- {title} Finished (Check output for errors) ---")
-
+                    self.log(
+                        f"\n=== {title} Finished (Exit Code: {process.returncode}) ===",
+                        "warn",
+                    )
             except Exception as e:
-                self.log(f"Execution Error: {e}")
+                self.log(f"Execution Error: {e}", "err")
+            finally:
+                self._set_busy(False, "Idle")
 
-        threading.Thread(target=_target, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True).start()
 
-    # --- Command Logic ---
-
+    # --------------------------------------------------------------------------
+    # Repair Actions
+    # --------------------------------------------------------------------------
     def run_sfc(self):
-        self.run_process_stream("sfc /scannow", "System File Checker")
+        self.run_process_stream(["sfc", "/scannow"], "System File Checker (SFC)")
 
     def run_dism_scan(self):
-        self.run_process_stream("DISM /Online /Cleanup-Image /ScanHealth", "DISM Health Check")
+        self.run_process_stream(
+            ["DISM", "/Online", "/Cleanup-Image", "/ScanHealth"],
+            "DISM Image Health Scan",
+        )
 
     def run_dism_restore(self):
-        if messagebox.askyesno("Confirm DISM Repair", "DISM RestoreHealth will download fresh system files from Windows Update.\n\nThis may take 10-20 minutes depending on your internet speed.\n\nContinue?"):
-            self.run_process_stream("DISM /Online /Cleanup-Image /RestoreHealth", "DISM Image Repair")
+        if self.is_running:
+            return
+
+        if messagebox.askyesno(
+            "Confirm DISM Repair",
+            "DISM RestoreHealth will download fresh system files from Windows Update.\n\n"
+            "This may take 10–20 minutes depending on your internet connection.\n\nContinue?",
+            parent=self,
+        ):
+            self.run_process_stream(
+                ["DISM", "/Online", "/Cleanup-Image", "/RestoreHealth"],
+                "DISM Image RestoreHealth",
+            )
 
     def schedule_chkdsk(self):
-        if messagebox.askyesno("Schedule CHKDSK", "Check Disk cannot run while Windows is using the drive.\n\nDo you want to schedule a check for the NEXT system restart?"):
-            def _target():
-                cmd = "echo y | chkdsk C: /f /r"
-                self.log("\n--- Scheduling Check Disk ---")
-                self.log(f"> {cmd}")
-                
-                try:
-                    result = subprocess.run(
-                        cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000
+        if self.is_running:
+            return
+
+        if not messagebox.askyesno(
+            "Schedule Check Disk (C:)",
+            "Check Disk cannot lock the system drive while Windows is running.\n\n"
+            "Do you want to schedule a full disk check (chkdsk C: /f /r) for the NEXT system restart?",
+            parent=self,
+        ):
+            return
+
+        self._set_busy(True, "Scheduling Check Disk...")
+
+        def _worker():
+            self.log("\n=== Scheduling Check Disk (C:) ===", "heading")
+            self.log("> chkdsk C: /f /r (Auto-confirm: Y)", "cmd")
+
+            try:
+                result = subprocess.run(
+                    ["chkdsk", "C:", "/f", "/r"],
+                    input="Y\n",
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=CREATE_NO_WINDOW,
+                )
+
+                output = (result.stdout or "").replace("\x00", "").strip()
+                err_out = (result.stderr or "").replace("\x00", "").strip()
+
+                if output:
+                    self.log(output)
+                if err_out:
+                    self.log(err_out, "err")
+
+                # chkdsk returns 0 or 3 when scheduling on a locked boot volume
+                if result.returncode in (0, 3) and output:
+                    self.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Check Disk Scheduled",
+                            "Disk Check has been processed for drive C:.\n\n"
+                            "Please restart your computer to begin the scan.",
+                            parent=self,
+                        ),
                     )
-                    self.log(result.stdout)
-                    
-                    if "next time the system restarts" in result.stdout:
-                        messagebox.showinfo("Success", "Disk Check scheduled successfully!\n\nPlease restart your computer to begin the scan.")
-                    else:
-                        self.log("WARNING: Could not verify schedule. Check output above.")
-                         
-                except Exception as e:
-                    self.log(f"Error: {e}")
+                else:
+                    self.log(
+                        "WARNING: Could not verify CHKDSK schedule. Ensure Wibe Suite is running as Administrator.",
+                        "warn",
+                    )
+            except Exception as e:
+                self.log(f"Error scheduling CHKDSK: {e}", "err")
+            finally:
+                self._set_busy(False, "Idle")
 
-            threading.Thread(target=_target, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True).start()
 
-# Compatibility alias for main.py dynamic routing
+
+# Compatibility aliases for main.py dynamic routing
 RepairTab = RepairModule
+WindowsRepairTab = RepairModule

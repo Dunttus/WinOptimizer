@@ -2,175 +2,219 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from config import DISABLABLE_SERVICES
 
-class VerticalScrollFrame(tk.Frame):
-    """Custom standard Tkinter scrollable container."""
-    def __init__(self, container, bg_color="#1c1c1c"):
-        super().__init__(container, bg=bg_color)
-        
-        self.canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner_frame = tk.Frame(self.canvas, bg=bg_color)
-        
-        self.inner_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        
-        # Mousewheel binding on hover
-        self.bind("<Enter>", self._bind_mouse)
-        self.bind("<Leave>", self._unbind_mouse)
-        self.canvas.bind("<Enter>", self._bind_mouse)
-        self.canvas.bind("<Leave>", self._unbind_mouse)
-        self.inner_frame.bind("<Enter>", self._bind_mouse)
-        self.inner_frame.bind("<Leave>", self._unbind_mouse)
+from config import (
+    THEME,
+    BG_MAIN,
+    BG_CARD,
+    BG_INPUT,
+    FG_PRIMARY,
+    FG_SECONDARY,
+    FG_MUTED,
+    BORDER_COLOR,
+    FONT_BODY,
+    FONT_BOLD,
+    FONT_SMALL,
+    DISABLABLE_SERVICES,
+    create_header,
+    create_button,
+)
 
-    def _bind_mouse(self, event):
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+CREATE_NO_WINDOW = 0x08000000
 
-    def _unbind_mouse(self, event):
-        try:
-            self.canvas.unbind_all("<MouseWheel>")
-        except Exception:
-            pass
-
-    def _on_mousewheel(self, event):
-        try:
-            if self.winfo_exists():
-                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        except Exception:
-            pass
-            
-    def clear(self):
-        for widget in self.inner_frame.winfo_children():
-            widget.destroy()
+# User-friendly descriptions for common Windows background services
+SERVICE_METADATA = {
+    "DiagTrack": (
+        "Connected User Experiences and Telemetry",
+        "Tracks diagnostic and usage telemetry sent to Microsoft.",
+    ),
+    "SysMain": (
+        "SysMain (Superfetch)",
+        "Preloads frequent apps into RAM. Can cause 100% disk usage on mechanical HDDs.",
+    ),
+    "PcaSvc": (
+        "Program Compatibility Assistant Service",
+        "Monitors and detects compatibility issues for installed user applications.",
+    ),
+    "Fax": (
+        "Fax Service",
+        "Legacy fax transmission and reception service.",
+    ),
+    "MapsBroker": (
+        "Downloaded Maps Manager",
+        "Periodically syncs and updates offline maps in the background.",
+    ),
+    "RetailDemo": (
+        "Retail Demo Service",
+        "Used exclusively by retail stores for display demo modes.",
+    ),
+    "TabletInputService": (
+        "Touch Keyboard and Handwriting Panel Service",
+        "Manages touch keyboard input (safe to disable on desktop PCs).",
+    ),
+}
 
 
 class ServicesModule(tk.Frame):
-    """Native Tkinter Service Manager Module utilizing config.py."""
+    """Windows Service Manager Module for disabling unnecessary background services."""
+
     def __init__(self, parent):
-        super().__init__(parent, bg="#1c1c1c")
+        super().__init__(parent, bg=BG_MAIN)
+        self.service_buttons: dict[str, tk.Button] = {}
 
-        # --- Info Section ---
-        info_frame = tk.Frame(self, bg="#1c1c1c")
-        info_frame.pack(fill="x", padx=20, pady=(20, 10))
-        tk.Label(info_frame, text="Service Manager", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(info_frame, text="Disable unnecessary background services to free up RAM and CPU.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
+        self.init_ui()
 
-        # --- Warning Frame ---
-        warning_frame = tk.Frame(self, bg="#1c1c1c")
-        warning_frame.pack(fill="x", padx=20, pady=(0, 10))
-        tk.Label(
-            warning_frame, 
-            text="⚠️ Note: Services listed below are safe to disable for most users, pulled directly from config definitions.", 
-            fg="gray", bg="#1c1c1c", font=("Segoe UI", 9)
-        ).pack(anchor="w")
-
-        # --- Services List Container ---
-        list_container = tk.Frame(self, bg="#1c1c1c", bd=1, relief="solid")
-        list_container.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        tk.Label(
-            list_container, text=" Debloat Services (Config Whitelist) ", fg="#888888", 
-            bg="#1c1c1c", font=("Segoe UI", 9, "bold")
-        ).pack(anchor="w", padx=10, pady=(8, 0))
-
-        self.scroll = VerticalScrollFrame(list_container, bg_color="#1c1c1c")
-        self.scroll.pack(fill="both", expand=True, padx=5, pady=5)
-
-        # Dictionary mapping service names to user-friendly descriptions
-        service_descriptions = {
-            "DiagTrack": ("Connected User Exp (Telemetry)", "Tracks usage data and sends it to Microsoft."),
-            "SysMain": ("SysMain (Superfetch)", "Preloads apps to RAM. Can cause high disk usage on HDDs."),
-            "PcaSvc": ("Program Compatibility Assistant", "Manages compatibility assistance for user applications."),
-            "Fax": ("Fax Service", "Legacy service for sending and receiving faxes."),
-            "MapsBroker": ("Downloaded Maps Manager", "Updates offline map data in the background."),
-            "RetailDemo": ("Retail Demo Service", "Controls store-display demo modes"),
-            "TabletInputService": ("Touch Keyboard Service", "On-screen keyboard/handwriting (disable if not using touch).")
-        }
-
-        # Populate rows dynamically using DISABLABLE_SERVICES from config.py
-        for service_name in sorted(DISABLABLE_SERVICES):
-            title, desc = service_descriptions.get(service_name, (service_name, "Whitelisted safe service from configuration."))
-            self.create_row(title, service_name, desc)
-
-    def create_row(self, title, service_name, desc):
-        parent = self.scroll.inner_frame
-        
-        row = tk.Frame(parent, bg="#2a2a2a", bd=1, relief="solid")
-        row.pack(fill="x", pady=4, padx=5)
-        row.grid_columnconfigure(0, weight=1)
-        row.grid_columnconfigure(1, weight=0)
-        
-        # Text Info
-        info = tk.Frame(row, bg="#2a2a2a")
-        info.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
-        
-        tk.Label(
-            info, text=title, font=("Segoe UI", 10, "bold"), 
-            fg="#ffffff", bg="#2a2a2a", anchor="w"
-        ).pack(anchor="w", fill="x")
-        
-        tk.Label(
-            info, text=f"Service ID: {service_name} — {desc}", font=("Segoe UI", 9), 
-            fg="#888888", bg="#2a2a2a", anchor="w", wraplength=550
-        ).pack(anchor="w", fill="x", pady=(2, 0))
-
-        # Action Button Frame
-        btn_frame = tk.Frame(row, bg="#2a2a2a")
-        btn_frame.grid(row=0, column=1, sticky="e", padx=12, pady=8)
-
-        btn = tk.Button(
-            btn_frame, text="Disable", width=12, bg="#3B8ED0", fg="white", 
-            font=("Segoe UI", 8, "bold"), activebackground="#1F6AA5", 
-            activeforeground="white", bd=0, cursor="hand2", padx=5, pady=4
+    def init_ui(self):
+        # --- Standard Header ---
+        create_header(
+            self,
+            title="Windows Service Manager",
+            subtitle="Safely stop and disable unnecessary background services to free up RAM and CPU resources.",
         )
-        btn.configure(command=lambda b=btn, s=service_name: self.disable_service(s, b))
-        btn.pack()
 
-    def disable_service(self, service_name, button):
-        """Disables service and updates button with specific status."""
-        
-        button.configure(text="Processing...", state="disabled", bg="#4d4d4d", fg="#aaaaaa")
-        
-        def _target():
+        # --- Notice Card ---
+        notice_card = tk.Frame(
+            self,
+            bg=BG_CARD,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+            padx=16,
+            pady=10,
+        )
+        notice_card.pack(fill=tk.X, padx=24, pady=(0, 12))
+
+        tk.Label(
+            notice_card,
+            text="ℹ️ Whitelisted Safe-to-Disable Services",
+            fg=THEME["info"],
+            bg=BG_CARD,
+            font=FONT_BOLD,
+        ).pack(anchor="w", pady=(0, 2))
+
+        tk.Label(
+            notice_card,
+            text="The services listed below are sourced directly from your verified safety whitelist definitions (config.py). Disabling them prevents background telemetry and idle resource drain.",
+            fg=FG_SECONDARY,
+            bg=BG_CARD,
+            font=FONT_SMALL,
+            justify="left",
+            anchor="w",
+        ).pack(fill=tk.X)
+
+        # --- Services Table Frame ---
+        table_container = tk.Frame(
+            self,
+            bg=BG_INPUT,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        table_container.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 20))
+
+        scrollbar = ttk.Scrollbar(table_container, orient="vertical")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        columns = ("Name", "ID", "Description", "Action")
+        self.tree = ttk.Treeview(
+            table_container,
+            columns=columns,
+            show="headings",
+            height=8,
+            selectmode="browse",
+            yscrollcommand=scrollbar.set,
+        )
+        scrollbar.config(command=self.tree.yview)
+
+        headers = [
+            ("Name", "Service Display Name", 240, "w"),
+            ("ID", "Service ID", 150, "w"),
+            ("Description", "Description", 390, "w"),
+            ("Action", "Action", 120, "center"),
+        ]
+        for col, text, width, anchor in headers:
+            self.tree.heading(col, text=text, anchor=anchor)
+            self.tree.column(col, width=width, anchor=anchor)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Populate rows
+        for svc_name in sorted(DISABLABLE_SERVICES):
+            display_title, desc = SERVICE_METADATA.get(
+                svc_name, (svc_name, "Whitelisted safe service from configuration.")
+            )
+            self.tree.insert(
+                "",
+                tk.END,
+                values=(display_title, svc_name, desc, "Disable"),
+                tags=(svc_name,),
+            )
+
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_click)
+
+    def _on_tree_click(self, event):
+        region = self.tree.identify_region(event.x, event.y)
+        if region == "cell":
+            column = self.tree.identify_column(event.x)
+            item_id = self.tree.identify_row(event.y)
+            # Column #4 is Action
+            if column == "#4" and item_id:
+                values = self.tree.item(item_id, "values")
+                if len(values) >= 2:
+                    svc_id = values[1]
+                    self.disable_service(svc_id, item_id)
+
+    def disable_service(self, service_name: str, item_id: str):
+        values = self.tree.item(item_id, "values")
+        if values and values[3] in ("Disabled ✓", "Processing..."):
+            return
+
+        # Update table row status to Processing
+        self.tree.item(item_id, values=(values[0], values[1], values[2], "Processing..."))
+
+        def _worker():
             try:
-                subprocess.run(f"net stop {service_name} /y", shell=True, capture_output=True, creationflags=0x08000000)
+                # 1. Stop service
+                subprocess.run(
+                    ["net", "stop", service_name, "/y"],
+                    capture_output=True,
+                    creationflags=CREATE_NO_WINDOW,
+                )
 
-                cmd = f"sc config {service_name} start= disabled"
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, creationflags=0x08000000)
+                # 2. Configure start type to disabled
+                result = subprocess.run(
+                    ["sc", "config", service_name, "start=", "disabled"],
+                    capture_output=True,
+                    text=True,
+                    creationflags=CREATE_NO_WINDOW,
+                )
 
                 if result.returncode == 0:
-                    new_text = "Disabled ✓"
-                    new_color = "#4d4d4d" 
+                    status_text = "Disabled ✓"
                 else:
                     err = result.stderr.strip()
                     if "Access is denied" in err:
-                        new_text = "Access Denied" 
-                    elif "OpenService FAILED 1060" in err:
-                        new_text = "Not Installed" 
-                    elif "OpenService FAILED 5" in err:
-                        new_text = "System Locked" 
-                    elif "OpenService FAILED" in err:
-                        new_text = "Protected"     
+                        status_text = "Access Denied"
+                    elif "1060" in err:
+                        status_text = "Not Installed"
                     else:
-                        new_text = "Failed"
+                        status_text = "Failed"
 
-                    new_color = "#4d4d4d" 
-
-                self.after(0, lambda: button.configure(text=new_text, bg=new_color, fg="#aaaaaa", state="disabled"))
-
+                self.after(
+                    0,
+                    lambda st=status_text: self.tree.item(
+                        item_id, values=(values[0], values[1], values[2], st)
+                    ),
+                )
             except Exception as e:
-                print(f"Service Error: {e}")
-                self.after(0, lambda: button.configure(text="Script Error", bg="#4d4d4d", fg="#aaaaaa", state="disabled"))
+                print(f"Service Error ({service_name}): {e}")
+                self.after(
+                    0,
+                    lambda: self.tree.item(
+                        item_id, values=(values[0], values[1], values[2], "Error")
+                    ),
+                )
 
-        threading.Thread(target=_target, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True).start()
+
 
 # Compatibility alias for main.py dynamic routing
 ServiceManagerTab = ServicesModule

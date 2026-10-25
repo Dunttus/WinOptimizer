@@ -2,186 +2,355 @@ import json
 import subprocess
 import threading
 import tkinter as tk
-from tkinter import ttk
-from config import SAFE_TO_REMOVE_APPS
+from tkinter import ttk, messagebox
 
-class ScrollableFrame:
-    """Custom standard Tkinter scrollable container."""
-    def __init__(self, container, bg_color):
-        self.frame = tk.Frame(container, bg=bg_color)
-        
-        self.canvas = tk.Canvas(self.frame, bg=bg_color, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.frame, orient="vertical", command=self.canvas.yview)
-        self.inner_frame = tk.Frame(self.canvas, bg=bg_color)
-        
-        self.inner_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+from config import (
+    THEME,
+    BG_MAIN,
+    BG_CARD,
+    BG_INPUT,
+    FG_PRIMARY,
+    FG_SECONDARY,
+    FG_MUTED,
+    BORDER_COLOR,
+    FONT_BODY,
+    FONT_BOLD,
+    FONT_SMALL,
+    SAFE_TO_REMOVE_APPS,
+    create_header,
+    create_button,
+)
 
-    def _on_mousewheel(self, event):
-        if self.inner_frame.winfo_height() > self.canvas.winfo_height():
-            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            
-    def clear(self):
-        for widget in self.inner_frame.winfo_children():
-            widget.destroy()
-
-    def pack(self, *args, **kwargs):
-        self.frame.pack(*args, **kwargs)
-        
-    def pack_forget(self):
-        self.frame.pack_forget()
+CREATE_NO_WINDOW = 0x08000000
 
 
 class UninstallerModule(tk.Frame):
-    """Native Tkinter Safe App Uninstaller Module utilizing config.py."""
+    """Native Tkinter Safe Windows Bloatware Uninstaller Module."""
+
     def __init__(self, parent):
-        super().__init__(parent, bg="#1c1c1c")
+        super().__init__(parent, bg=BG_MAIN)
+        self.all_apps: list[tuple[str, str, str]] = []  # (display_name, package_name, full_name)
+        self.is_busy = False
+        self.placeholder_text = "Filter safe-to-remove apps..."
 
-        # --- Info Section ---
-        info_frame = tk.Frame(self, bg="#1c1c1c")
-        info_frame.pack(fill="x", padx=20, pady=(20, 10))
-        tk.Label(info_frame, text="Safe App Uninstaller", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(info_frame, text="Only showing non-critical bloatware that is safe to remove, pulled from config.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
-
-        # --- Search Bar ---
-        search_frame = tk.Frame(self, bg="#1c1c1c")
-        search_frame.pack(fill="x", padx=20, pady=10)
-        
-        self.search_var = tk.StringVar()
-        self.entry = tk.Entry(
-            search_frame, textvariable=self.search_var, width=40, 
-            bg="#111111", fg="#ffffff", insertbackground="white", 
-            font=("Segoe UI", 10), bd=1, relief="solid"
-        )
-        self.entry.pack(side="left", padx=(0, 10), ipady=4)
-        self.entry.insert(0, "Filter apps...")
-        self.entry.bind("<FocusIn>", lambda e: self.entry.delete(0, 'end') if self.entry.get() == "Filter apps..." else None)
-        self.entry.bind("<KeyRelease>", lambda e: self.filter_list())
-
-        tk.Button(
-            search_frame, text="Refresh List", command=self.load_apps, 
-            bg="#3B8ED0", fg="white", font=("Segoe UI", 9, "bold"), 
-            bd=0, cursor="hand2", padx=15, pady=4
-        ).pack(side="left")
-
-        # --- App List Container ---
-        self.scroll = ScrollableFrame(self, bg_color="#1c1c1c")
-        self.scroll.pack(fill="both", expand=True, padx=20, pady=10)
-
-        self.all_apps = [] 
+        self.init_ui()
         self.load_apps()
 
-    def load_apps(self):
-        self.scroll.clear()
-
-        loading_lbl = tk.Label(
-            self.scroll.inner_frame, text="Filtering system packages for safe apps...", 
-            fg="gray", bg="#1c1c1c", font=("Segoe UI", 10)
+    def init_ui(self):
+        # --- Standard Header ---
+        create_header(
+            self,
+            title="Bloatware Uninstaller",
+            subtitle="Scan and remove pre-installed Windows bloatware and Microsoft 365 stub apps using your safe whitelist.",
         )
-        loading_lbl.pack(pady=20)
+
+        # --- Top Controls & Filter Bar ---
+        ctrl_frame = tk.Frame(self, bg=BG_MAIN)
+        ctrl_frame.pack(fill=tk.X, padx=24, pady=(0, 10))
+
+        self.search_var = tk.StringVar()
+        self.entry = tk.Entry(
+            ctrl_frame,
+            textvariable=self.search_var,
+            width=36,
+            bg=BG_INPUT,
+            fg=FG_SECONDARY,
+            insertbackground=FG_PRIMARY,
+            font=FONT_BODY,
+            bd=0,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        self.entry.pack(side=tk.LEFT, padx=(0, 10), ipady=6)
+        self.entry.insert(0, self.placeholder_text)
+        self.entry.bind("<FocusIn>", self._on_focus_in)
+        self.entry.bind("<FocusOut>", self._on_focus_out)
+        self.entry.bind("<KeyRelease>", lambda _e: self.filter_list())
+
+        self.btn_refresh = create_button(
+            ctrl_frame,
+            text="↻ Refresh Scan",
+            command=self.load_apps,
+            variant="primary",
+            pady=5,
+        )
+        self.btn_refresh.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.btn_remove_selected = create_button(
+            ctrl_frame,
+            text="Uninstall Selected",
+            command=self.uninstall_selected,
+            variant="danger",
+            pady=5,
+        )
+        self.btn_remove_selected.pack(side=tk.RIGHT)
+
+        self.status_lbl = tk.Label(
+            ctrl_frame,
+            text="Scanning packages...",
+            fg=FG_SECONDARY,
+            bg=BG_MAIN,
+            font=FONT_SMALL,
+        )
+        self.status_lbl.pack(side=tk.LEFT, padx=8)
+
+        # --- App Table Container ---
+        table_container = tk.Frame(
+            self,
+            bg=BG_INPUT,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        table_container.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 20))
+
+        scrollbar = ttk.Scrollbar(table_container, orient="vertical")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        columns = ("DisplayName", "PackageName", "FullName", "Status")
+        self.tree = ttk.Treeview(
+            table_container,
+            columns=columns,
+            show="headings",
+            selectmode="extended",
+            yscrollcommand=scrollbar.set,
+        )
+        scrollbar.config(command=self.tree.yview)
+
+        headers = [
+            ("DisplayName", "Application Name", 220, "w"),
+            ("PackageName", "Package Identifier", 260, "w"),
+            ("FullName", "Full Package Name", 340, "w"),
+            ("Status", "Status", 120, "center"),
+        ]
+        for col, text, width, anchor in headers:
+            self.tree.heading(col, text=text, anchor=anchor)
+            self.tree.column(col, width=width, anchor=anchor)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.tree.tag_configure("removed", foreground=THEME["success"])
+        self.tree.tag_configure("failed", foreground=THEME["danger"])
+
+    # --------------------------------------------------------------------------
+    # Search Placeholder Helpers
+    # --------------------------------------------------------------------------
+    def _on_focus_in(self, _event):
+        if self.entry.get() == self.placeholder_text:
+            self.entry.delete(0, tk.END)
+            self.entry.config(fg=FG_PRIMARY)
+
+    def _on_focus_out(self, _event):
+        if not self.entry.get().strip():
+            self.entry.insert(0, self.placeholder_text)
+            self.entry.config(fg=FG_SECONDARY)
+
+    def _set_busy(self, busy: bool, status_msg: str):
+        self.is_busy = busy
+        self.status_lbl.config(
+            text=status_msg,
+            fg=THEME["info"] if busy else FG_SECONDARY,
+        )
+        if busy:
+            self.btn_refresh.config(state="disabled", bg=BG_CARD, fg=FG_MUTED)
+            self.btn_remove_selected.config(state="disabled", bg=BG_CARD, fg=FG_MUTED)
+        else:
+            self.btn_refresh.config(state="normal", bg=THEME["accent"], fg="#ffffff")
+            self.btn_remove_selected.config(state="normal", bg=THEME["danger"], fg="#ffffff")
+
+    # --------------------------------------------------------------------------
+    # Package Discovery & Filtering
+    # --------------------------------------------------------------------------
+    def load_apps(self):
+        if self.is_busy:
+            return
+        self._set_busy(True, "Scanning installed AppX packages...")
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
 
         def _fetch():
-            cmd = 'powershell -NoProfile -Command "Get-AppxPackage | Select-Object Name, PackageFullName | ConvertTo-Json"'
+            ps_script = "Get-AppxPackage | Select-Object Name, PackageFullName | ConvertTo-Json -Compress"
             try:
-                si = subprocess.STARTUPINFO()
-                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                
-                result = subprocess.check_output(
-                    cmd, startupinfo=si, shell=True, 
-                    text=True, encoding='utf-8', errors='ignore'
-                ).strip()
-                
-                temp_apps = []
-                if result:
-                    data = json.loads(result)
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_script],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=CREATE_NO_WINDOW,
+                )
+
+                raw_out = (result.stdout or "").strip()
+                discovered: list[tuple[str, str, str]] = []
+
+                if raw_out:
+                    data = json.loads(raw_out)
                     if isinstance(data, dict):
                         data = [data]
-                        
+
+                    seen_full_names = set()
                     for item in data:
-                        package_name = item.get("Name", "")
-                        full_name = item.get("PackageFullName", "")
-                        
-                        if package_name and full_name:
-                            if any(safe_app.lower() in package_name.lower() for safe_app in SAFE_TO_REMOVE_APPS):
-                                display_name = package_name.replace("Microsoft.", "").replace("Windows.", "")
-                                temp_apps.append((display_name, full_name))
-                
-                temp_apps = sorted(list(set(temp_apps)))
-                self.all_apps = temp_apps
-                self.after(0, lambda: self.render_apps(self.all_apps))
+                        pkg_name = (item.get("Name") or "").strip()
+                        full_name = (item.get("PackageFullName") or "").strip()
+
+                        if not pkg_name or not full_name or full_name in seen_full_names:
+                            continue
+
+                        if any(
+                            safe_app.lower() in pkg_name.lower()
+                            for safe_app in SAFE_TO_REMOVE_APPS
+                        ):
+                            seen_full_names.add(full_name)
+                            display_name = (
+                                pkg_name.replace("Microsoft.", "")
+                                .replace("Windows.", "")
+                                .strip(".")
+                            )
+                            discovered.append((display_name, pkg_name, full_name))
+
+                discovered.sort(key=lambda x: x[0].lower())
+                self.all_apps = discovered
+                self.after(0, self._finish_load)
             except Exception as e:
-                print(f"Fetch Error: {e}")
-                self.after(0, lambda: self.render_apps([]))
+                self.all_apps = []
+                self.after(0, lambda err=str(e): self._finish_load(err))
 
         threading.Thread(target=_fetch, daemon=True).start()
 
-    def filter_list(self):
-        query = self.search_var.get().lower()
-        if query == "filter apps...":
-            query = ""
-            
-        filtered = [a for a in self.all_apps if query in a[0].lower()]
-        self.render_apps(filtered)
-
-    def render_apps(self, apps):
-        self.scroll.clear()
-        parent = self.scroll.inner_frame
-        
-        if not apps:
-            tk.Label(
-                parent, text="No safe apps found or everything is already clean.", 
-                fg="gray", bg="#1c1c1c", font=("Segoe UI", 10)
-            ).pack(pady=20)
+    def _finish_load(self, error_msg: str | None = None):
+        if error_msg:
+            self._set_busy(False, f"Error scanning packages: {error_msg}")
             return
 
-        for idx, (display_name, full_name) in enumerate(apps):
-            bg = "#222222" if idx % 2 == 0 else "#1c1c1c"
-            row = tk.Frame(parent, bg=bg)
-            row.pack(fill="x", pady=2, padx=5)
-            
-            tk.Label(
-                row, text=display_name, anchor="w", fg="#ffffff", 
-                bg=bg, font=("Segoe UI", 9, "bold")
-            ).pack(side="left", padx=10, pady=8, fill="x", expand=True)
-            
-            btn = tk.Button(
-                row, text="Uninstall", width=10, bg="#c42b1c", fg="white", 
-                font=("Segoe UI", 9, "bold"), activebackground="#A32014", 
-                activeforeground="white", bd=0, cursor="hand2"
+        self.filter_list()
+        count = len(self.all_apps)
+        self._set_busy(
+            False,
+            f"Found {count} removable bloatware package{'s' if count != 1 else ''}",
+        )
+
+    def filter_list(self):
+        query = self.search_var.get().strip().lower()
+        if query == self.placeholder_text.lower():
+            query = ""
+
+        filtered = [
+            app
+            for app in self.all_apps
+            if not query or query in app[0].lower() or query in app[1].lower()
+        ]
+        self.render_apps(filtered)
+
+    def render_apps(self, apps: list[tuple[str, str, str]]):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        for display_name, pkg_name, full_name in apps:
+            self.tree.insert(
+                "",
+                tk.END,
+                values=(display_name, pkg_name, full_name, "Installed"),
             )
-            btn.configure(command=lambda f=full_name, b=btn: self.uninstall_app(f, b))
-            btn.pack(side="right", padx=10, pady=6)
 
-    def uninstall_app(self, full_name, button):
-        button.config(text="Removing...", state="disabled", bg="gray30")
-        
-        def _target():
-            cmd = f'powershell -NoProfile -Command "Remove-AppxPackage -Package {full_name}"'
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            try:
-                result = subprocess.run(
-                    cmd, startupinfo=si, shell=True, capture_output=True, 
-                    text=True, encoding='utf-8', errors='ignore'
+    # --------------------------------------------------------------------------
+    # Uninstallation Logic
+    # --------------------------------------------------------------------------
+    def uninstall_selected(self):
+        if self.is_busy:
+            return
+
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showinfo(
+                "No Apps Selected",
+                "Select one or more bloatware packages from the table to uninstall.\n"
+                "(Hold Ctrl or Shift to select multiple rows.)",
+                parent=self,
+            )
+            return
+
+        targets = []
+        for item_id in selected_items:
+            vals = self.tree.item(item_id, "values")
+            if len(vals) >= 4 and vals[3] != "Removed ✓":
+                targets.append((item_id, vals[0], vals[1], vals[2]))
+
+        if not targets:
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Bloatware Removal",
+            f"Uninstall {len(targets)} selected package(s)?\n\n"
+            + "\n".join(f"• {t[1]}" for t in targets[:10])
+            + (f"\n...and {len(targets) - 10} more" if len(targets) > 10 else ""),
+            parent=self,
+        ):
+            return
+
+        self._set_busy(True, f"Removing {len(targets)} package(s)...")
+
+        def _worker():
+            removed_full_names = set()
+
+            for idx, (item_id, disp_name, pkg_name, full_name) in enumerate(targets, start=1):
+                self.after(
+                    0,
+                    lambda i=item_id, d=disp_name, p=pkg_name, f=full_name, n=idx: [
+                        self.status_lbl.config(
+                            text=f"Removing ({n}/{len(targets)}): {d}..."
+                        ),
+                        self.tree.item(i, values=(d, p, f, "Removing...")),
+                    ],
                 )
-                
-                if result.returncode == 0:
-                    self.after(0, lambda: button.config(text="Removed ✓", bg="gray20"))
-                else:
-                    self.after(0, lambda: button.config(text="Failed", bg="gray20", state="normal"))
-            except Exception:
-                self.after(0, lambda: button.config(text="Failed", bg="gray20", state="normal"))
 
-        threading.Thread(target=_target, daemon=True).start()
+                ps_cmd = f"Remove-AppxPackage -Package '{full_name}' -ErrorAction Stop"
+                try:
+                    res = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        creationflags=CREATE_NO_WINDOW,
+                    )
+                    if res.returncode == 0:
+                        removed_full_names.add(full_name)
+                        self.after(
+                            0,
+                            lambda i=item_id, d=disp_name, p=pkg_name, f=full_name: self.tree.item(
+                                i, values=(d, p, f, "Removed ✓"), tags=("removed",)
+                            ),
+                        )
+                    else:
+                        self.after(
+                            0,
+                            lambda i=item_id, d=disp_name, p=pkg_name, f=full_name: self.tree.item(
+                                i, values=(d, p, f, "Failed"), tags=("failed",)
+                            ),
+                        )
+                except Exception:
+                    self.after(
+                        0,
+                        lambda i=item_id, d=disp_name, p=pkg_name, f=full_name: self.tree.item(
+                            i, values=(d, p, f, "Failed"), tags=("failed",)
+                        ),
+                    )
+
+            # Prune removed apps from master cache so filtering stays accurate
+            if removed_full_names:
+                self.all_apps = [
+                    a for a in self.all_apps if a[2] not in removed_full_names
+                ]
+
+            self.after(
+                0,
+                lambda r=len(removed_full_names), t=len(targets): self._set_busy(
+                    False, f"Removed {r}/{t} selected package(s)."
+                ),
+            )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
 
 # Compatibility aliases for main.py dynamic loading
 BloatUninstallerTab = UninstallerModule

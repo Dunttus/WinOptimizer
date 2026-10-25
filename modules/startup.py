@@ -1,182 +1,295 @@
+import os
 import winreg
 import ctypes
+import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-def is_admin():
+from config import (
+    THEME,
+    BG_MAIN,
+    BG_CARD,
+    BG_INPUT,
+    FG_PRIMARY,
+    FG_SECONDARY,
+    BORDER_COLOR,
+    FONT_BODY,
+    FONT_BOLD,
+    FONT_SMALL,
+    create_header,
+    create_button,
+)
+
+
+def is_admin() -> bool:
     """Checks if the script is running with administrative privileges."""
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False
 
 
 class StartupModule(tk.Frame):
-    """Native Tkinter Startup Manager Module."""
+    """Native Tkinter Startup Manager Module (Registry Run Keys & Startup Folders)."""
+
     def __init__(self, parent):
-        super().__init__(parent, bg="#1c1c1c")
+        super().__init__(parent, bg=BG_MAIN)
+        self.startup_entries: dict[str, dict] = {}
 
-        # --- Info Section ---
-        info_frame = tk.Frame(self, bg="#1c1c1c")
-        info_frame.pack(fill="x", padx=20, pady=(20, 10))
-        tk.Label(info_frame, text="Startup Manager", fg="#ffffff", bg="#1c1c1c", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(info_frame, text="Remove applications that start automatically with Windows.", fg="#888888", bg="#1c1c1c", font=("Segoe UI", 10)).pack(anchor="w")
-
-        # --- Bottom Refresh Bar ---
-        btn_frame = tk.Frame(self, bg="#1c1c1c")
-        btn_frame.pack(side="bottom", fill="x", padx=20, pady=15)
-
-        tk.Button(
-            btn_frame, text="Refresh List", command=self.load_startup_items, 
-            bg="#3B8ED0", fg="white", font=("Segoe UI", 9, "bold"), 
-            bd=0, cursor="hand2", padx=15, pady=6
-        ).pack(side="left")
-
-        # --- Startup Items Container ---
-        list_container = tk.Frame(self, bg="#1c1c1c", bd=1, relief="solid")
-        list_container.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        tk.Label(
-            list_container, text=" Registry Startup Items ", fg="#888888", 
-            bg="#1c1c1c", font=("Segoe UI", 9, "bold")
-        ).pack(anchor="w", padx=10, pady=(8, 0))
-
-        self.scroll = VerticalScrollFrame(list_container, bg_color="#1c1c1c")
-        self.scroll.pack(fill="both", expand=True, padx=5, pady=5)
-
+        self.init_ui()
         self.load_startup_items()
 
-    def load_startup_items(self):
-        self.scroll.clear()
-            
-        locations = [
-            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", "Current User"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "System Wide (64-bit)"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "System Wide (32-bit)")
+    def init_ui(self):
+        # --- Standard Header ---
+        create_header(
+            self,
+            title="Startup Manager",
+            subtitle="Inspect and remove applications configured to launch automatically when Windows starts.",
+        )
+
+        # --- Top Action Bar ---
+        ctrl_frame = tk.Frame(self, bg=BG_MAIN)
+        ctrl_frame.pack(fill=tk.X, padx=24, pady=(0, 10))
+
+        create_button(
+            ctrl_frame,
+            text="↻ Refresh List",
+            command=self.load_startup_items,
+            variant="primary",
+            pady=5,
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
+        create_button(
+            ctrl_frame,
+            text="Open User Startup Folder",
+            command=self.open_user_startup_folder,
+            variant="secondary",
+            pady=5,
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
+        create_button(
+            ctrl_frame,
+            text="Remove Selected Item",
+            command=self.remove_selected_item,
+            variant="danger",
+            pady=5,
+        ).pack(side=tk.RIGHT)
+
+        self.status_lbl = tk.Label(
+            ctrl_frame,
+            text="",
+            fg=FG_SECONDARY,
+            bg=BG_MAIN,
+            font=FONT_SMALL,
+        )
+        self.status_lbl.pack(side=tk.LEFT, padx=8)
+
+        # --- Startup Items Treeview Table ---
+        table_container = tk.Frame(
+            self,
+            bg=BG_INPUT,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        table_container.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 20))
+
+        scrollbar = ttk.Scrollbar(table_container, orient="vertical")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        columns = ("Name", "Scope", "Command")
+        self.tree = ttk.Treeview(
+            table_container,
+            columns=columns,
+            show="headings",
+            selectmode="browse",
+            yscrollcommand=scrollbar.set,
+        )
+        scrollbar.config(command=self.tree.yview)
+
+        headers = [
+            ("Name", "Application / Entry Name", 230, "w"),
+            ("Scope", "Startup Location", 180, "w"),
+            ("Command", "Target Path / Command", 480, "w"),
         ]
-        
-        items_found = False
-        
-        for hkey, path, context in locations:
+        for col, text, width, anchor in headers:
+            self.tree.heading(col, text=text, anchor=anchor)
+            self.tree.column(col, width=width, anchor=anchor)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.tree.tag_configure("user", foreground=FG_PRIMARY)
+        self.tree.tag_configure("system", foreground=THEME["info"])
+
+    # --------------------------------------------------------------------------
+    # Enumeration Logic (Registry + Startup Folders)
+    # --------------------------------------------------------------------------
+    def load_startup_items(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.startup_entries.clear()
+
+        reg_locations = [
+            (
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                "Registry (Current User)",
+                winreg.KEY_READ,
+                False,
+            ),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+                "Registry (System 64-bit)",
+                winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+                True,
+            ),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+                "Registry (System 32-bit)",
+                winreg.KEY_READ | winreg.KEY_WOW64_32KEY,
+                True,
+            ),
+        ]
+
+        # 1. Scan Registry Run Keys
+        for hkey, reg_path, scope_label, access_mask, needs_admin in reg_locations:
             try:
-                with winreg.OpenKey(hkey, path, 0, winreg.KEY_READ) as key:
-                    i = 0
+                with winreg.OpenKey(hkey, reg_path, 0, access_mask) as key:
+                    idx = 0
                     while True:
                         try:
-                            name, value, _ = winreg.EnumValue(key, i)
-                            self.add_row(name, value, path, hkey, context)
-                            items_found = True
-                            i += 1
+                            name, value, _ = winreg.EnumValue(key, idx)
+                            self._insert_entry(
+                                name=name,
+                                scope=scope_label,
+                                command=str(value),
+                                meta={
+                                    "kind": "registry",
+                                    "name": name,
+                                    "hkey": hkey,
+                                    "reg_path": reg_path,
+                                    "write_mask": (
+                                        winreg.KEY_SET_VALUE | (access_mask & (winreg.KEY_WOW64_64KEY | winreg.KEY_WOW64_32KEY))
+                                    ),
+                                    "needs_admin": needs_admin,
+                                },
+                            )
+                            idx += 1
                         except OSError:
                             break
-            except PermissionError:
-                print(f"Permission denied reading: {path}")
-            except FileNotFoundError:
-                pass 
-                
-        if not items_found:
-            tk.Label(
-                self.scroll.inner_frame, text="No startup items found in Registry.", 
-                fg="gray", bg="#1c1c1c", font=("Segoe UI", 10)
-            ).pack(pady=20)
+            except (PermissionError, FileNotFoundError):
+                pass
 
-    def add_row(self, name, path_val, reg_path, hkey_root, context):
-        parent = self.scroll.inner_frame
-        
-        row = tk.Frame(parent, bg="#2a2a2a", bd=1, relief="solid")
-        row.pack(fill="x", pady=4, padx=5)
-        row.grid_columnconfigure(0, weight=1)
-        row.grid_columnconfigure(1, weight=0)
-        
-        # Info Section
-        info = tk.Frame(row, bg="#2a2a2a")
-        info.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
-        
-        tk.Label(
-            info, text=name, font=("Segoe UI", 10, "bold"), 
-            fg="#ffffff", bg="#2a2a2a", anchor="w"
-        ).pack(anchor="w", fill="x")
-        
-        sub_text = f"[{context}]   {path_val}"
-        tk.Label(
-            info, text=sub_text, font=("Segoe UI", 9), 
-            fg="#aaaaaa", bg="#2a2a2a", anchor="w", wraplength=550
-        ).pack(anchor="w", fill="x", pady=(2, 0))
-        
-        # Remove Button
-        btn_frame = tk.Frame(row, bg="#2a2a2a")
-        btn_frame.grid(row=0, column=1, sticky="e", padx=12, pady=8)
+        # 2. Scan Windows Startup Folders
+        appdata = os.environ.get("APPDATA", "")
+        progdata = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+        folder_locations = [
+            (
+                os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup"),
+                "Startup Folder (User)",
+                False,
+            ),
+            (
+                os.path.join(progdata, r"Microsoft\Windows\Start Menu\Programs\Startup"),
+                "Startup Folder (All Users)",
+                True,
+            ),
+        ]
 
-        tk.Button(
-            btn_frame, text="Remove", width=12, bg="#c42b1c", fg="white", 
-            font=("Segoe UI", 8, "bold"), activebackground="#A32014", 
-            activeforeground="white", bd=0, cursor="hand2", padx=5, pady=4,
-            command=lambda: self.delete_entry(name, reg_path, hkey_root)
-        ).pack()
+        for folder_path, scope_label, needs_admin in folder_locations:
+            if folder_path and os.path.isdir(folder_path):
+                try:
+                    for fname in sorted(os.listdir(folder_path)):
+                        if fname.lower() == "desktop.ini":
+                            continue
+                        full_path = os.path.join(folder_path, fname)
+                        if os.path.isfile(full_path):
+                            self._insert_entry(
+                                name=fname,
+                                scope=scope_label,
+                                command=full_path,
+                                meta={
+                                    "kind": "file",
+                                    "name": fname,
+                                    "filepath": full_path,
+                                    "needs_admin": needs_admin,
+                                },
+                            )
+                except OSError:
+                    pass
 
-    def delete_entry(self, name, reg_path, hkey_root):
-        if hkey_root == winreg.HKEY_LOCAL_MACHINE and not is_admin():
-            messagebox.showerror("Permission Error", "Administrator privileges are required to remove System Wide items.\nPlease restart the app as Admin.")
+        count = len(self.startup_entries)
+        self.status_lbl.config(text=f"Found {count} startup item{'s' if count != 1 else ''}")
+
+    def _insert_entry(self, name: str, scope: str, command: str, meta: dict):
+        tag = "system" if meta.get("needs_admin") else "user"
+        item_id = self.tree.insert(
+            "",
+            tk.END,
+            values=(name, scope, command),
+            tags=(tag,),
+        )
+        self.startup_entries[item_id] = meta
+
+    # --------------------------------------------------------------------------
+    # Actions
+    # --------------------------------------------------------------------------
+    def open_user_startup_folder(self):
+        appdata = os.environ.get("APPDATA", "")
+        folder = os.path.join(appdata, r"Microsoft\Windows\Start Menu\Programs\Startup")
+        if os.path.isdir(folder):
+            subprocess.Popen(["explorer.exe", folder])
+        else:
+            messagebox.showwarning("Not Found", f"Startup folder not found:\n{folder}", parent=self)
+
+    def remove_selected_item(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showinfo(
+                "No Selection",
+                "Please select a startup item from the table to remove.",
+                parent=self,
+            )
             return
 
-        if messagebox.askyesno("Confirm Removal", f"Are you sure you want to stop '{name}' from starting with Windows?\n\nThis will delete the registry entry."):
-            try:
-                with winreg.OpenKey(hkey_root, reg_path, 0, winreg.KEY_SET_VALUE) as key:
+        item_id = sel[0]
+        meta = self.startup_entries.get(item_id)
+        if not meta:
+            return
+
+        name = meta["name"]
+        if meta.get("needs_admin") and not is_admin():
+            messagebox.showerror(
+                "Permission Error",
+                f"Administrator privileges are required to remove system-wide startup item '{name}'.\n\n"
+                "Click the 'Elevate to Admin' badge in the sidebar to restart with Administrator rights.",
+                parent=self,
+            )
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Startup Removal",
+            f"Are you sure you want to stop '{name}' from starting automatically with Windows?\n\n"
+            "This will permanently delete the startup entry.",
+            parent=self,
+        ):
+            return
+
+        try:
+            if meta["kind"] == "registry":
+                with winreg.OpenKey(
+                    meta["hkey"], meta["reg_path"], 0, meta["write_mask"]
+                ) as key:
                     winreg.DeleteValue(key, name)
-                
-                self.load_startup_items()
-                messagebox.showinfo("Success", f"Removed '{name}' from startup.")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Could not remove item: {e}")
+            elif meta["kind"] == "file":
+                os.remove(meta["filepath"])
 
+            self.load_startup_items()
+            messagebox.showinfo("Removed", f"Successfully removed '{name}' from startup.", parent=self)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not remove startup item '{name}':\n{e}", parent=self)
 
-class VerticalScrollFrame(tk.Frame):
-    """Custom standard Tkinter scrollable container."""
-    def __init__(self, container, bg_color="#1c1c1c"):
-        super().__init__(container, bg=bg_color)
-        
-        self.canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner_frame = tk.Frame(self.canvas, bg=bg_color)
-        
-        self.inner_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        
-        # Mousewheel binding on hover
-        self.bind("<Enter>", self._bind_mouse)
-        self.bind("<Leave>", self._unbind_mouse)
-        self.canvas.bind("<Enter>", self._bind_mouse)
-        self.canvas.bind("<Leave>", self._unbind_mouse)
-        self.inner_frame.bind("<Enter>", self._bind_mouse)
-        self.inner_frame.bind("<Leave>", self._unbind_mouse)
-
-    def _bind_mouse(self, event):
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-
-    def _unbind_mouse(self, event):
-        try:
-            self.canvas.unbind_all("<MouseWheel>")
-        except Exception:
-            pass
-
-    def _on_mousewheel(self, event):
-        try:
-            if self.winfo_exists():
-                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        except Exception:
-            pass
-            
-    def clear(self):
-        for widget in self.inner_frame.winfo_children():
-            widget.destroy()
 
 # Compatibility alias for main.py dynamic routing
 StartupManagerTab = StartupModule

@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/badge/License-GPL--3.0-orange?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)
 
-**A modern, all-in-one system utility suite for Windows built with Python & CustomTkinter.**
+**A modern, all-in-one system utility suite for Windows built with Python & native Tkinter.**
 
 Modern, lightweight, all-in-one system utility and PC optimization suite for Windows 10 and 11, built using **Python** and native **Tkinter**. 
 
@@ -29,7 +29,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>2. Package Manager</b></summary>
 <br>
 <ul>
-  <li><b>WinGet GUI:</b> Search, install, and batch-update software directly from Microsoft's official repository.</li>
+  <li><b>WinGet GUI:</b> Search, install, uninstall, and batch-update software directly from Microsoft's official repository, or batch-install preset apps from <code>config.py</code>.</li>
 </ul>
 </details>
 
@@ -37,7 +37,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>3. Bloat Uninstaller</b></summary>
 <br>
 <ul>
-  <li><b>App Removal:</b> Scan for and remove pre-installed Windows bloatware and Office components using a configurable safe whitelist (<code>SAFE_TO_REMOVE_APPS</code>).</li>
+  <li><b>App Removal:</b> Scan for and batch-remove pre-installed Windows bloatware and Office components using a configurable safe whitelist (<code>SAFE_TO_REMOVE_APPS</code>).</li>
 </ul>
 </details>
 
@@ -45,7 +45,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>4. Privacy & Tweaks</b></summary>
 <br>
 <ul>
-  <li><b>Registry Toggles:</b> One-click options to enhance privacy and configure system UI preferences.</li>
+  <li><b>Registry Toggles:</b> One-click sliding switches to enhance privacy, disable telemetry/Copilot/Bing search, restore the classic Windows 11 context menu, and configure system UI preferences.</li>
 </ul>
 </details>
 
@@ -53,7 +53,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>5. System Cleaner</b></summary>
 <br>
 <ul>
-  <li><b>Maintenance:</b> Deep cleaning tools for temporary files, system cache, and junk data.</li>
+  <li><b>Maintenance:</b> Deep cleaning tools with category selection and safe file extension filtering (<code>SAFE_JUNK_EXTENSIONS</code>) for temporary files, system cache, prefetch, and junk data.</li>
 </ul>
 </details>
 
@@ -61,7 +61,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>6. File Scanner</b></summary>
 <br>
 <ul>
-  <li><b>Disk Analysis:</b> Analyze storage usage and identify large files taking up space.</li>
+  <li><b>Disk Analysis:</b> Analyze storage usage, find duplicate files with extension filters, and identify large files (>100 MB) taking up space.</li>
 </ul>
 </details>
 
@@ -69,7 +69,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>7. Startup Manager</b></summary>
 <br>
 <ul>
-  <li><b>Boot Optimization:</b> View and disable applications that launch automatically at boot to improve startup speed.</li>
+  <li><b>Boot Optimization:</b> View and remove applications that launch automatically at boot across Registry <code>Run</code> keys and Windows Startup folders to improve startup speed.</li>
 </ul>
 </details>
 
@@ -77,7 +77,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>8. Service Manager</b></summary>
 <br>
 <ul>
-  <li><b>Background Services:</b> Manage and safely disable unnecessary Windows background services to free up resources.</li>
+  <li><b>Background Services:</b> Manage and safely disable unnecessary Windows background services using the verified <code>DISABLABLE_SERVICES</code> whitelist to free up resources.</li>
 </ul>
 </details>
 
@@ -85,7 +85,7 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 <summary><b>9. Process Priority</b></summary>
 <br>
 <ul>
-  <li><b>CPU Allocation:</b> Real-time management of process CPU priorities to optimize active foreground applications.</li>
+  <li><b>CPU Allocation:</b> Real-time management of process CPU priorities to optimize active foreground applications, with automatic lockout protection for critical Windows system processes (<code>CRITICAL_PROCESS_NAMES</code>).</li>
 </ul>
 </details>
 
@@ -117,29 +117,25 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 
 ## ⚙️ Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/Dunttus/WinOptimizer.git
-    cd WinOptimizer
-    ```
-    ```bash
-    cd WinOptimizer
-    ```
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/Dunttus/WinOptimizer.git](https://github.com/Dunttus/WinOptimizer.git)
+   cd WinOptimizer
+   ```
 
-2.  **Install dependencies:**
-    ```bash
-    winget install Python.Python.3.14
-    ```
-    ```bash
-    pip install psutil
-    ```
+2. **Install dependencies:**
+   ```bash
+   winget install Python.Python.3.14
+   ```
+   ```bash
+   pip install psutil
+   ```
 
-3.  **Run as Administrator:**
-    * Right-click your terminal or IDE and select **"Run as Administrator"**.
-    * Execute the main script:
-    ```bash
-    python.exe main.py
-    ```
+3. **Run as Administrator:**
+   * Launch the main script (automatically prompts for Windows UAC **Administrator** elevation on startup):
+   ```bash
+   python.exe main.py
+   ```
 
 ---
 
@@ -147,25 +143,23 @@ Streamline your system maintenance by combining a powerful **WinGet GUI Package 
 
 > [!WARNING]
 > **This tool modifies Windows Registry keys and Hardware Settings.**
-* **Administrator Rights:** Required for most features.
-* **License Notice:** The Package Manager installs apps from public repositories. You must own a valid license for any paid software installed.
-* **Liability:** Always create a **System Restore Point** before performing deep cleaning or mass uninstallations.
+- **Administrator Rights:** Required for most features.
+- **License Notice:** The Package Manager installs apps from public repositories. You must own a valid license for any paid software installed.
+- **Liability:** Always create a **System Restore Point** before performing deep cleaning or mass uninstallations.
 
 ---
 
 ## 🤝 Credits
 
 ### 🧠 Project Team
-* **Project Creator:** Dunttus
-* **AI Assistance:** Partly vibe coded with Gemini
+- **Project Creator:** Dunttus
+- **AI Assistance:** Partly vibe coded with Gemini 4 Argon
 
 ### 📚 Open Source Libraries
-* **[psutil](https://github.com/giampaolo/psutil)** - System monitoring
-
+- **[psutil](https://github.com/giampaolo/psutil)** - System monitoring
 
 ---
 
 ## 📄 License
-
 
 This project is licensed under the **GPL-3.0 License**.
